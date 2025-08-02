@@ -37,13 +37,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework', # Should already be here from earlier installation
-    'users', # Add this line
+    'users',
+    'courses', # Add this line
     # Other apps will go here later
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -123,3 +126,19 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Media files (for user-uploaded content like videos)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media' # This will create a 'media' folder in your project root
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", # <-- Your frontend's development URL (Vite default)
+    "http://127.0.0.1:5173", # <-- Often needed as well for local testing
+    # Add other specific frontend origins here if needed later (e.g., your deployed frontend URL)
+]
+
+# You might also find CORS_ALLOW_ALL_ORIGINS = True for quick testing,
+# but it's less secure and should be set to False (like above) for production.
+# We are explicitly allowing specific origins above, so CORS_ALLOW_ALL_ORIGINS should remain False

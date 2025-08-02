@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import CourseListPage from './pages/CourseListPage';
+import CourseDetailPage from './pages/CourseDetailPage';
 // You might also want a Navbar/Header component, but let's keep it simple for now
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/courses" element={<CourseListPage />} />
+        <Route path="/courses/:courseId" element={<CourseDetailPage />} />
         {/* Add more routes as your project grows */}
       </Routes>
     </Router>
