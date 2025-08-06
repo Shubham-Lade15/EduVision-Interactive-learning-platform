@@ -8,8 +8,8 @@ class Course(models.Model):
     # You might want to link this to a User (Instructor) later:
     # instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses')
 
-    def __str__(self):
-        return self.title
+    #def __str__(self):
+     #   return self.title
 
 class Video(models.Model):
     course = models.ForeignKey(Course, related_name='videos', on_delete=models.CASCADE)
@@ -18,6 +18,7 @@ class Video(models.Model):
     video_file = models.FileField(upload_to='videos/')
     duration_seconds = models.IntegerField(null=True, blank=True) # Will populate later
     order = models.IntegerField(default=0) # For ordering videos in a course
+    transcript = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ['order'] # Order videos by 'order' field
