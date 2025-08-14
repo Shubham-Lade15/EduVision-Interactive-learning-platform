@@ -1,5 +1,6 @@
 # backend/courses/models.py
 from django.db import models
+from django.db.models import JSONField
 
 class Course(models.Model):
     title = models.CharField(max_length=255)
@@ -19,6 +20,7 @@ class Video(models.Model):
     duration_seconds = models.IntegerField(null=True, blank=True) # Will populate later
     order = models.IntegerField(default=0) # For ordering videos in a course
     transcript = models.TextField(blank=True, null=True)
+    segments = JSONField(blank=True, null=True)
 
     class Meta:
         ordering = ['order'] # Order videos by 'order' field
