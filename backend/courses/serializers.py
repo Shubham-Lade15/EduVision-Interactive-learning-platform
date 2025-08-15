@@ -1,8 +1,22 @@
 # backend/courses/serializers.py
 from rest_framework import serializers
-from .models import Course, Video
+from .models import Course, Video, Quiz, Question
+
+class QuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = '__all__'
+
+class QuizSerializer(serializers.ModelSerializer):
+    questions = QuestionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Quiz
+        fields = '__all__'
 
 class VideoSerializer(serializers.ModelSerializer):
+    quizzes = QuizSerializer(many=True, read_only=True)
+
     class Meta:
         model = Video
         fields = '__all__' # Includes all fields from the Video model

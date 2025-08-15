@@ -27,3 +27,34 @@ class Video(models.Model):
 
     def __str__(self):
         return f"{self.course.title} - {self.title}"
+    
+class Quiz(models.Model):
+    video = models.ForeignKey(
+        'Video', 
+        related_name='quizzes', 
+        on_delete=models.CASCADE
+    )
+    segment_index = models.IntegerField(
+        help_text="The index of the video segment this quiz is for."
+    )
+
+    def __str__(self):
+        return f"Quiz for {self.video.title} (Segment {self.segment_index})"
+
+class Question(models.Model):
+    quiz = models.ForeignKey(
+        Quiz, 
+        related_name='questions', 
+        on_delete=models.CASCADE
+    )
+    question_text = models.TextField()
+    choices = JSONField(
+        help_text="JSON array of choices, e.g., ['A', 'B', 'C']"
+    )
+    correct_answer = models.CharField(
+        max_length=255, 
+        help_text="The correct answer from the choices"
+    )
+
+    def __str__(self):
+        return f"Question {self.id}: {self.question_text[:50]}..."
