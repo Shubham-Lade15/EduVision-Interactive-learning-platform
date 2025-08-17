@@ -13,10 +13,8 @@ function CourseDetailPage() {
   const [error, setError] = useState(null);
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');
   const [currentVideoId, setCurrentVideoId] = useState(null);
-
   const [transcriptionStatus, setTranscriptionStatus] = useState('');
-  const [segmentationStatus, setSegmentationStatus] = useState('');
-
+  const [smartContentStatus, setSmartContentStatus] = useState('');
   const [showQuiz, setShowQuiz] = useState(false);
   const [currentQuiz, setCurrentQuiz] = useState(null);
   const [shownQuizzes, setShownQuizzes] = useState(new Set());
@@ -24,19 +22,23 @@ function CourseDetailPage() {
   const playerRef = useRef(null);
 
   // Fetch course details
+  // Fetch course details
   useEffect(() => {
     const fetchCourseDetails = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/courses/${courseId}/`);
         setCourse(response.data);
+
         if (response.data.videos && response.data.videos.length > 0) {
           const firstVideo = response.data.videos[0];
           const fullUrl = firstVideo.video_file.startsWith('http')
             ? firstVideo.video_file
             : `${API_BASE_URL}${firstVideo.video_file}`;
+
           setCurrentVideoUrl(fullUrl);
           setCurrentVideoId(firstVideo.id);
         }
+
         setLoading(false);
       } catch (err) {
         setError('Failed to fetch course details. Please check the backend API.');
@@ -44,38 +46,71 @@ function CourseDetailPage() {
         console.error("Error fetching course details:", err);
       }
     };
+
     fetchCourseDetails();
   }, [courseId]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (showQuiz || !playerRef.current || !currentVideoId || !course) return;
+
+      const currentTime = playerRef.current.currentTime;
+      const currentVideo = course.videos.find(v => v.id === currentVideoId);
+      const quizzes = currentVideo?.quizzes || [];
+
+      for (const quiz of quizzes) {
+        const quizTime = quiz.segment_end_time ?? 0;
+        if (!shownQuizzes.has(quiz.id) && currentTime >= quizTime) {
+          playerRef.current.pause();
+          setCurrentQuiz(quiz);
+          setShowQuiz(true);
+          setShownQuizzes(prev => new Set(prev).add(quiz.id));
+          return;
+        }
+      }
+    }, 200); // 5x per second
+
+    return () => clearInterval(interval);
+  }, [course, currentVideoId, showQuiz, shownQuizzes]);
 
   // Handle video change
   const handleVideoSelect = (video) => {
     const isFullUrl = video.video_file.startsWith('http://') || video.video_file.startsWith('https://');
     const fullUrl = isFullUrl ? video.video_file : `${API_BASE_URL}${video.video_file}`;
+
     setCurrentVideoUrl(fullUrl);
     setCurrentVideoId(video.id);
     setShowQuiz(false);
     setShownQuizzes(new Set());
+
+    // Reset status messages
+    setTranscriptionStatus('');
+    setSmartContentStatus('');
   };
 
   // Video progress listener
   const handleProgress = ({ playedSeconds }) => {
-    if (showQuiz || !playerRef.current) return;
+    // Return if quiz is showing, no player, or no current video data
+    if (showQuiz || !playerRef.current || !currentVideoId || !course) return;
 
-    const currentVideo = course?.videos.find(v => v.id === currentVideoId);
+    const currentVideo = course.videos.find(v => v.id === currentVideoId);
     const quizzes = currentVideo?.quizzes || [];
 
     for (const quiz of quizzes) {
-      const quizTime = Math.floor(Number(quiz.segment_index));
-      if (!shownQuizzes.has(quiz.id) && Math.floor(playedSeconds) === quizTime) {
-        console.log(`Triggering quiz at ${quizTime}s for quiz ID: ${quiz.id}`);
-        playerRef.current.pause();
-        setCurrentQuiz(quiz);
-        setShowQuiz(true);
-        setShownQuizzes(prev => new Set(prev).add(quiz.id));
-        return;
-      }
+        // The CRUCIAL FIX: Use the segment_end_time as the trigger
+        const quizTime = quiz.segment_end_time;
+        
+        // This if condition checks if the quiz hasn't been shown AND the video time has passed the trigger point
+        if (!shownQuizzes.has(quiz.id) && playedSeconds >= quizTime) {
+            console.log(`Triggering quiz at ${quizTime}s for quiz ID: ${quiz.id}`);
+            playerRef.current.pause();
+            setCurrentQuiz(quiz);
+            setShowQuiz(true);
+            setShownQuizzes(prev => new Set(prev).add(quiz.id));
+            return;
+        }
     }
-  };
+};
 
   // Resume after passing quiz
   const onQuizPass = () => {
@@ -98,15 +133,15 @@ function CourseDetailPage() {
     }
   };
 
-  // Segment
-  const handleSegment = async (videoId) => {
-    setSegmentationStatus('Segmentation started...');
+  // NEW HANDLER FOR SMART CONTENT GENERATION
+  const handleGenerateSmartContent = async (videoId) => {
+    setSmartContentStatus('Generating smart content...');
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/videos/${videoId}/segment/`);
-      setSegmentationStatus(response.data.status);
+      const response = await axios.post(`${API_BASE_URL}/api/videos/${videoId}/generate-smart-content/`);
+      setSmartContentStatus(response.data.status);
     } catch (error) {
-      setSegmentationStatus('Segmentation failed!');
-      console.error('Error during segmentation:', error);
+      setSmartContentStatus('Smart content generation failed!');
+      console.error('Error during smart content generation:', error);
     }
   };
 
@@ -120,10 +155,7 @@ function CourseDetailPage() {
       <p>{course.description}</p>
 
       {showQuiz && currentQuiz && (
-        <QuizComponent
-          quizData={currentQuiz}
-          onQuizPass={onQuizPass}
-        />
+        <QuizComponent quizData={currentQuiz} onQuizPass={onQuizPass} />
       )}
 
       <div style={{ width: '80%', marginBottom: '20px', position: 'relative' }}>
@@ -147,28 +179,49 @@ function CourseDetailPage() {
             {course.videos.map(video => (
               <li key={video.id} style={{ marginBottom: '10px' }}>
                 <span
-                  style={{ cursor: 'pointer', color: currentVideoUrl.includes(video.video_file) ? 'blue' : 'black' }}
+                  style={{
+                    cursor: 'pointer',
+                    color: currentVideoUrl.includes(video.video_file) ? 'blue' : 'black'
+                  }}
                   onClick={() => handleVideoSelect(video)}
                 >
                   {video.title}
                 </span>
+
                 <button
                   onClick={() => handleTranscribe(video.id)}
-                  style={{ marginLeft: '10px', backgroundColor: '#4CAF50', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }}
+                  style={{
+                    marginLeft: '10px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    padding: '5px 10px',
+                    borderRadius: '5px',
+                    cursor: 'pointer'
+                  }}
                 >
                   Transcribe
                 </button>
                 {transcriptionStatus && video.id === currentVideoId && (
                   <span style={{ marginLeft: '10px' }}>{transcriptionStatus}</span>
                 )}
+
                 <button
-                  onClick={() => handleSegment(video.id)}
-                  style={{ marginLeft: '10px', backgroundColor: '#3366ff', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }}
+                  onClick={() => handleGenerateSmartContent(video.id)}
+                  style={{
+                    marginLeft: '10px',
+                    backgroundColor: '#800080',
+                    color: 'white',
+                    border: 'none',
+                    padding: '5px 10px',
+                    borderRadius: '5px',
+                    cursor: 'pointer'
+                  }}
                 >
-                  Segment
+                  Generate Smart Content
                 </button>
-                {segmentationStatus && video.id === currentVideoId && (
-                  <span style={{ marginLeft: '10px' }}>{segmentationStatus}</span>
+                {smartContentStatus && video.id === currentVideoId && (
+                  <span style={{ marginLeft: '10px' }}>{smartContentStatus}</span>
                 )}
               </li>
             ))}

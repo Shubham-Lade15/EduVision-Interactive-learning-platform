@@ -142,3 +142,5 @@ CORS_ALLOWED_ORIGINS = [
 # You might also find CORS_ALLOW_ALL_ORIGINS = True for quick testing,
 # but it's less secure and should be set to False (like above) for production.
 # We are explicitly allowing specific origins above, so CORS_ALLOW_ALL_ORIGINS should remain False
+
+GEMINI_API_KEY = "AIzaSyBbsjcXXSZZqX2QJ9225WfbebdPu8ZKl1M"
