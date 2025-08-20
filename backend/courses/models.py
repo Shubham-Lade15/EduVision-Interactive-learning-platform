@@ -28,6 +28,7 @@ class Video(models.Model):
     order = models.IntegerField(default=0)  # For ordering videos in a course
     transcript = models.TextField(blank=True, null=True)
     segments = JSONField(blank=True, null=True)
+    notes = JSONField(blank=True, null=True)
 
     class Meta:
         ordering = ['order']  # Order videos by 'order' field

@@ -187,3 +187,42 @@ class VideoViewSet(viewsets.ModelViewSet):
                 {'error': f'Smart content generation failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+    @action(detail=True, methods=['post'], url_path='generate-notes')
+    def generate_notes(self, request, pk=None):
+        try:
+            video = get_object_or_404(Video, pk=pk)
+
+            if not video.transcript:
+                return Response(
+                    {'error': 'Transcript not found. Please transcribe the video first.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            prompt = (
+                f"Create a set of detailed study notes from the following video transcript. "
+                f"Structure the notes with clear headings and bullet points for easy reading. "
+                f"Focus on the key concepts, definitions, and examples provided in the text.\n\n"
+                f"Return the notes as a single, valid JSON object with a single key 'notes_content' "
+                f"that contains the summary as a string formatted with markdown (e.g., # Heading, - Bullet point).\n\n"
+                f"Transcription:\n\"\"\"\n{video.transcript}\n\"\"\""
+            )
+
+            response = model_gemini.generate_content(prompt)
+            notes_text = response.text.strip().replace("```json\n", "").replace("```", "")
+            
+            notes_data = json.loads(notes_text)
+            
+            video.notes = notes_data['notes_content']
+            video.save()
+            
+            return Response({
+                'status': 'Notes generation successful!',
+                'notes_length': len(notes_data['notes_content'])
+            })
+        except Exception as e:
+            traceback.print_exc()
+            return Response(
+                {'error': f'Notes generation failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
