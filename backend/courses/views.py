@@ -16,6 +16,7 @@ from .models import Course, Video, Quiz, Question
 from .serializers import CourseSerializer, VideoSerializer
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
+model_st = SentenceTransformer('all-MiniLM-L6-v2') 
 
 # Initialize Gemini API
 genai.configure(api_key=settings.GEMINI_API_KEY)
