@@ -1,4 +1,3 @@
-// frontend/src/pages/CourseDetailPage.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
@@ -19,7 +18,8 @@ function CourseDetailPage() {
   const [transcriptionStatus, setTranscriptionStatus] = useState('');
   const [smartContentStatus, setSmartContentStatus] = useState('');
   const [notesStatus, setNotesStatus] = useState('');
-  const [showNotes, setShowNotes] = useState(false); // NEW STATE
+  const [showNotes, setShowNotes] = useState(false);
+  const [videoCompleted, setVideoCompleted] = useState(false);
 
   const [showQuiz, setShowQuiz] = useState(false);
   const [currentQuiz, setCurrentQuiz] = useState(null);
@@ -63,7 +63,8 @@ function CourseDetailPage() {
     setTranscriptionStatus('');
     setSmartContentStatus('');
     setNotesStatus('');
-    setShowNotes(false); // RESET NOTES DISPLAY
+    setShowNotes(false);
+    setVideoCompleted(false);
   };
 
   // Video progress listener
@@ -73,6 +74,15 @@ function CourseDetailPage() {
     const currentVideo = course.videos.find(v => v.id === currentVideoId);
     const quizzes = currentVideo?.quizzes || [];
 
+    // Check for video completion
+    const duration = playerRef.current.duration;
+    if (duration > 0 && playedSeconds / duration >= 0.99) {
+      setVideoCompleted(true);
+    } else {
+      setVideoCompleted(false);
+    }
+
+    // Check for quizzes
     for (const quiz of quizzes) {
       const quizTime = quiz.segment_end_time;
       
@@ -114,8 +124,6 @@ function CourseDetailPage() {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/videos/${videoId}/generate-smart-content/`);
       setSmartContentStatus(response.data.status);
-      // After generation, refetch course details to get the new data
-      // fetchCourseDetails(); // NOTE: You'll need to turn fetchCourseDetails into a callable function for this to work
     } catch (error) {
       setSmartContentStatus('Smart content generation failed!');
       console.error('Error during smart content generation:', error);
@@ -128,8 +136,6 @@ function CourseDetailPage() {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/videos/${videoId}/generate-notes/`);
       setNotesStatus(response.data.status);
-      // After generation, refetch course details to get the new data
-      // fetchCourseDetails();
     } catch (error) {
       setNotesStatus('Notes generation failed!');
       console.error('Error during notes generation:', error);
@@ -164,7 +170,7 @@ function CourseDetailPage() {
             src={currentVideoUrl}
             controls={!showQuiz}
             width="100%"
-            onTimeUpdate={(e) => handleProgress({ playedSeconds: e.target.currentTime })}
+            onTimeUpdate={(e) => handleProgress({ playedSeconds: e.target.currentTime, duration: e.target.duration })}
           />
         ) : (
           <div>No video selected or available for this course.</div>
@@ -220,6 +226,7 @@ function CourseDetailPage() {
                 <button
                   onClick={() => handleGenerateNotes(video.id)}
                   style={{ marginLeft: '10px', backgroundColor: '#ffa500', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }}
+                  disabled={!videoCompleted}
                 >
                   Generate Notes
                 </button>
