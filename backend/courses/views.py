@@ -12,11 +12,15 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db.models import JSONField
-from .models import Course, Video, Quiz, Question
-from .serializers import CourseSerializer, VideoSerializer
+from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer
+from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer
+from rest_framework.decorators import api_view
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
+
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 # Initialize Gemini API
 genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -30,7 +34,6 @@ nlp = nltk.data.load('tokenizers/punkt/english.pickle')
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
-
 
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all()
@@ -224,5 +227,73 @@ class VideoViewSet(viewsets.ModelViewSet):
             traceback.print_exc()
             return Response(
                 {'error': f'Notes generation failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+    # ... (all your existing code for CourseViewSet and VideoViewSet) ...
+
+class QuizViewSet(viewsets.ModelViewSet):
+    queryset = Quiz.objects.all()
+    serializer_class = QuizSerializer
+    
+    @action(detail=True, methods=['post'], url_path='submit')
+    def submit_quiz(self, request, pk=None):
+        try:
+            quiz = self.get_object()
+            student = User.objects.first()  # Assuming you've set up authentication
+
+            # Receive answers from the request body
+            submitted_answers = request.data.get('answers', [])
+            
+            # Create a QuizAttempt instance
+            quiz_attempt = QuizAttempt.objects.create(
+                student=student,
+                quiz=quiz,
+            )
+
+            score = 0
+            
+            # Get the correct answers for this quiz's questions
+            quiz_questions = quiz.questions.all()
+            
+            for submitted_answer in submitted_answers:
+                question_id = submitted_answer.get('question_id')
+                selected_option = submitted_answer.get('selected_option')
+                
+                # Find the corresponding question object
+                try:
+                    question = quiz_questions.get(id=question_id)
+                except Question.DoesNotExist:
+                    continue  # Skip if question not found
+                
+                # Check if the submitted answer is correct
+                is_correct = (selected_option == question.correct_answer)
+                
+                if is_correct:
+                    score += 1
+                
+                # Save the student's answer
+                StudentAnswer.objects.create(
+                    attempt=quiz_attempt,
+                    question=question,
+                    selected_option=selected_option,
+                    is_correct=is_correct
+                )
+
+            # Update the score and passing status
+            quiz_attempt.score = score
+            quiz_attempt.passed = (score > 0) # Simple pass/fail for now, can be changed later
+            quiz_attempt.save()
+
+            return Response({
+                'status': 'Quiz submitted successfully',
+                'score': score,
+                'total_questions': len(quiz_questions),
+                'passed': quiz_attempt.passed
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': f'Quiz submission failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

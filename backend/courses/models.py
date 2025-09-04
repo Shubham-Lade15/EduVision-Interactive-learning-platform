@@ -2,17 +2,16 @@
 from django.db import models
 from django.db.models import JSONField
 
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
 
 class Course(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    # You might want to link this to a User (Instructor) later:
-    # instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses')
-
-    # def __str__(self):
-    #     return self.title
-
+    
 
 class Video(models.Model):
     course = models.ForeignKey(
@@ -24,7 +23,7 @@ class Video(models.Model):
     # You might need to configure MEDIA_ROOT in settings.py
     video_file = models.FileField(upload_to='videos/')
 
-    duration_seconds = models.IntegerField(null=True, blank=True)  # Will populate later
+    duration_seconds = models.IntegerField(null=True, blank=True)  
     order = models.IntegerField(default=0)  # For ordering videos in a course
     transcript = models.TextField(blank=True, null=True)
     segments = JSONField(blank=True, null=True)
@@ -68,3 +67,19 @@ class Question(models.Model):
 
     def __str__(self):
         return f"Question {self.id}: {self.question_text[:50]}..."
+    
+class QuizAttempt(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='quiz_attempts')
+    quiz = models.ForeignKey('Quiz', on_delete=models.CASCADE, related_name='attempts')
+    score = models.IntegerField(default=0)
+    passed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Attempt by {self.student.username} on {self.quiz.video.title} Quiz"
+
+class StudentAnswer(models.Model):
+    attempt = models.ForeignKey(QuizAttempt, on_delete=models.CASCADE, related_name='student_answers', null=True)
+    question = models.ForeignKey('Question', on_delete=models.CASCADE, null=True)
+    selected_option = models.CharField(max_length=255, null=True, blank=True)
+    is_correct = models.BooleanField(default=False)

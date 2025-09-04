@@ -98,13 +98,36 @@ function CourseDetailPage() {
   };
 
   // Resume after passing quiz
-  const onQuizPass = () => {
+  // NEW: Handle the result of the quiz submission
+  const onQuizSubmitted = (passed) => {
     setShowQuiz(false);
     setCurrentQuiz(null);
-    if (playerRef.current) {
-      playerRef.current.play();
+    if (passed) {
+        alert("Quiz passed! You can now continue watching.");
+        if (playerRef.current) {
+            playerRef.current.play();
+        }
+    } else {
+        alert("Quiz failed. Please try again after re-watching the video.");
+        // Find the current video and its segments
+        const currentVideo = course.videos.find(v => v.id === currentVideoId);
+        if (currentVideo && playerRef.current) {
+            // Find the segment related to the current quiz
+            const segment = currentVideo.segments.find(s => s.index === currentQuiz.segment_index);
+            if (segment) {
+                // Rewind the video to the start time of the segment
+                playerRef.current.currentTime = segment.start;
+                playerRef.current.play(); // Play the video to re-engage the user
+            }
+        }
+        // CRITICAL FIX: Remove the failed quiz from the 'shownQuizzes' set
+        setShownQuizzes(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(currentQuiz.id);
+            return newSet;
+        });
     }
-  };
+};
 
   // Transcribe
   const handleTranscribe = async (videoId) => {
@@ -158,8 +181,9 @@ function CourseDetailPage() {
 
       {showQuiz && currentQuiz && (
         <QuizComponent
-          quizData={currentQuiz}
-          onQuizPass={onQuizPass}
+            quizData={currentQuiz}
+            quizId={currentQuiz.id} // Pass the quiz ID
+            onQuizSubmitted={onQuizSubmitted} // Pass the new handler
         />
       )}
 

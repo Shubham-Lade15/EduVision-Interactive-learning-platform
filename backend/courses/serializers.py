@@ -1,6 +1,6 @@
 # backend/courses/serializers.py
 from rest_framework import serializers
-from .models import Course, Video, Quiz, Question
+from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,3 +27,14 @@ class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = '__all__' # Includes all fields from the Course model
+
+class StudentAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentAnswer
+        fields = '__all__'
+
+class QuizAttemptSerializer(serializers.ModelSerializer):
+    student_answers = StudentAnswerSerializer(many=True, read_only=True)
+    class Meta:
+        model = QuizAttempt
+        fields = '__all__'
