@@ -1,12 +1,12 @@
-// src/pages/RegisterPage.jsx
 import React from 'react';
+import RegisterForm from '../components/RegisterForm';
 
 function RegisterPage() {
-  return (
-    <div>
-      <h1>Register</h1>
-    </div>
-  );
+    return (
+        <div>
+            <RegisterForm />
+        </div>
+    );
 }
 
 export default RegisterPage;

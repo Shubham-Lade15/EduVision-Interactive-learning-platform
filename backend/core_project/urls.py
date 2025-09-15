@@ -4,11 +4,12 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+# ... imports ...
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api-auth/', include('rest_framework.urls')),
-    # Make sure this line correctly points to the `courses` app's URLs
     path('api/', include('courses.urls')),
+    path('api/users/', include('users.urls')),
 ]
 
 if settings.DEBUG:

@@ -32,17 +32,18 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
-    'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'rest_framework', # Should already be here from earlier installation
-    'users',
-    'courses', # Add this line
-    # Other apps will go here later
+    'rest_framework',
+    'users', 
+    'django.contrib.auth',
+    'courses',
+    'rest_framework.authtoken',
 ]
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -144,3 +145,16 @@ CORS_ALLOWED_ORIGINS = [
 # We are explicitly allowing specific origins above, so CORS_ALLOW_ALL_ORIGINS should remain False
 
 GEMINI_API_KEY = "AIzaSyBbsjcXXSZZqX2QJ9225WfbebdPu8ZKl1M"
+
+# Set the custom user model
+AUTH_USER_MODEL = 'users.User'
+
+# Set Django REST Framework to use Token-based Authentication by default
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ]
+}

@@ -6,8 +6,9 @@ import json
 import traceback
 import random
 import numpy as np
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework import viewsets, status, permissions
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action, permission_classes, api_view, parser_classes, authentication_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
@@ -18,6 +19,8 @@ from rest_framework.decorators import api_view
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
+from users.permissions import IsTutor
+from rest_framework.authentication import TokenAuthentication
 
 from django.contrib.auth import get_user_model
 User = get_user_model()
@@ -34,10 +37,22 @@ nlp = nltk.data.load('tokenizers/punkt/english.pickle')
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.AllowAny]
+        else:
+            permission_classes = [IsTutor]
+        return [permission() for permission in permission_classes]
 
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all()
     serializer_class = VideoSerializer
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.AllowAny]
+        else:
+            permission_classes = [IsTutor]
+        return [permission() for permission in permission_classes]
 
     @action(detail=True, methods=['post'], url_path='transcribe')
     def transcribe_video(self, request, pk=None):
@@ -267,7 +282,9 @@ class QuizViewSet(viewsets.ModelViewSet):
                     continue  # Skip if question not found
                 
                 # Check if the submitted answer is correct
-                is_correct = (selected_option == question.correct_answer)
+                print(f"Submitted: '{selected_option}', Correct: '{question.correct_answer}'")
+                print(f"Comparison after strip: '{selected_option.strip()}' == '{question.correct_answer.strip()}'")
+                is_correct = (selected_option.strip() == question.correct_answer.strip())
                 
                 if is_correct:
                     score += 1
@@ -297,3 +314,19 @@ class QuizViewSet(viewsets.ModelViewSet):
                 {'error': f'Quiz submission failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])  # optional (explicit)
+@permission_classes([permissions.IsAuthenticated, IsTutor])
+@parser_classes([MultiPartParser, FormParser])
+def video_upload_view(request):
+    print("=== video_upload_view called ===")
+    print("Request user:", request.user)
+    print("Is authenticated:", request.user.is_authenticated)
+    print("User role:", getattr(request.user, "role", "N/A"))
+
+    serializer = VideoSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(tutor=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -9,25 +9,24 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 class QuizSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True, read_only=True)
-
     class Meta:
         model = Quiz
         fields = '__all__'
 
 class VideoSerializer(serializers.ModelSerializer):
-    quizzes = QuizSerializer(many=True, read_only=True)
-
+    quizzes = QuizSerializer(many=True, read_only=True) # <-- This is the key line
     class Meta:
         model = Video
-        fields = '__all__' # Includes all fields from the Video model
+        fields = '__all__'
 
 class CourseSerializer(serializers.ModelSerializer):
-    videos = VideoSerializer(many=True, read_only=True) # Nested serializer to show videos in course list
+    videos = VideoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Course
-        fields = '__all__' # Includes all fields from the Course model
+        fields = ['id', 'title', 'description', 'videos']
 
+        
 class StudentAnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentAnswer

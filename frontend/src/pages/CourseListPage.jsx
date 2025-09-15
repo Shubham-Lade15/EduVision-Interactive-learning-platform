@@ -1,50 +1,54 @@
-// src/pages/CourseListPage.jsx (example)
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Link } from 'react-router-dom'; // For linking to individual course pages
+// src/pages/CourseListPage.jsx
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
 
-const API_URL = 'http://127.0.0.1:8000/api/courses/'; // Update if your backend URL changes
+const API_URL = "http://127.0.0.1:8000/api/courses/";
 
-function CourseListPage() {
+function CourseListPage({ user }) {
+  const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  console.log("CourseListPage received user:", user);
+
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const response = await axios.get(API_URL);
+        const token = localStorage.getItem("token");
+        const response = await axios.get(API_URL, {
+          headers: token ? { Authorization: `Token ${token}` } : {},
+        });
         setCourses(response.data);
-        setLoading(false);
       } catch (err) {
-        setError('Failed to fetch courses. Please check the backend server.');
+        setError("Failed to load courses.");
+        console.error("Error fetching courses:", err.response || err);
+      } finally {
         setLoading(false);
-        console.error("Error fetching courses:", err);
       }
     };
+
     fetchCourses();
-  }, []); // Empty dependency array means this runs once on component mount
+  }, []);
 
   if (loading) return <div>Loading courses...</div>;
   if (error) return <div>Error: {error}</div>;
-  if (courses.length === 0) return <div>No courses available yet.</div>;
 
-
+  const handleAddCourse = () => {
+    navigate("/admin-add-course");
+  };
   return (
-    <div>
-      <h1>Available Courses</h1>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
-        {courses.map(course => (
-          <div key={course.id} style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px', width: '300px' }}>
-            <h2><Link to={`/courses/${course.id}`}>{course.title}</Link></h2>
-            <p>{course.description}</p>
-            {/* Add more course details if needed */}
-          </div>
-        ))}
-      </div>
-      <Link to="/admin-add-course" style={{ marginTop: '20px', display: 'block' }}>Add New Course (Admin/Instructor)</Link>
-    </div>
-  );
+        <div>
+        <h1>Available Courses</h1>
+        {user?.role === 'tutor' && (
+            <div style={{ marginBottom: '20px' }}>
+                <Link to="/create-course" style={{ marginRight: '10px' }}>Add New Course</Link>
+                <Link to="/upload-video">Upload New Video</Link>
+            </div>
+            )}
+            {/* ... your courses list ... */}
+        </div>
+    );
 }
-
 export default CourseListPage;
