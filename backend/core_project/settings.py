@@ -81,10 +81,15 @@ WSGI_APPLICATION = 'core_project.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'eduvision_db',        # your database name
+        'USER': 'postgres',         # your postgres username
+        'PASSWORD': 'Shubham@15',     # your postgres password
+        'HOST': 'localhost',        # database host
+        'PORT': '5432',             # default postgres port
     }
 }
+
 
 
 # Password validation

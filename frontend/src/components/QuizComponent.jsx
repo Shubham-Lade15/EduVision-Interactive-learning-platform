@@ -1,172 +1,190 @@
 import React, { useState } from "react";
-import axios from 'axios';
-const API_BASE_URL = 'http://127.0.0.1:8000';
+import axios from "axios";
 
-// Update props to include quizId and a submission handler
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 export default function QuizComponent({ quizData, quizId, onQuizSubmitted }) {
-    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-    const [selectedAnswer, setSelectedAnswer] = useState(null);
-    const [showFeedback, setShowFeedback] = useState(false);
-    const [quizStatus, setQuizStatus] = useState(null); // 'pass', 'fail', or null
-    const [quizResult, setQuizResult] = useState(null); // Will store the full response
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [answers, setAnswers] = useState({});
+  const [quizResult, setQuizResult] = useState(null);
 
-    if (!quizData || !quizData.questions || quizData.questions.length === 0) {
-        return <p>No quiz data available for this segment.</p>;
+  // Track cumulative results
+  const [cumulativeCorrect, setCumulativeCorrect] = useState(0);
+  const [cumulativeAttempts, setCumulativeAttempts] = useState(0);
+
+  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
+    return <p>No quiz data available for this segment.</p>;
+  }
+
+  const currentQuestion = quizData.questions[currentQuestionIndex];
+  const safeChoices = React.useMemo(() => {
+    try {
+      const parsed = JSON.parse(currentQuestion.choices);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return Array.isArray(currentQuestion.choices)
+        ? currentQuestion.choices
+        : [];
+    }
+  }, [currentQuestion]);
+
+  const handleAnswerSelect = (choice) => {
+    setSelectedAnswer(choice);
+    setAnswers((prev) => ({
+      ...prev,
+      [currentQuestion.id]: choice,
+    }));
+  };
+
+  const handleNext = async () => {
+    if (!selectedAnswer) {
+      alert("Please select an answer to proceed.");
+      return;
     }
 
-    const currentQuestion = quizData.questions[currentQuestionIndex];
-    const safeChoices = React.useMemo(() => {
-        try {
-            const parsed = JSON.parse(currentQuestion.choices);
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-            return Array.isArray(currentQuestion.choices) ? currentQuestion.choices : [];
-        }
-    }, [currentQuestion]);
+    if (currentQuestionIndex < quizData.questions.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+      setSelectedAnswer(null);
+    } else {
+      // Submit answers for this quiz
+      const submissionData = {
+        answers: Object.keys(answers).map((questionId) => ({
+          question_id: questionId,
+          selected_option: answers[questionId],
+        })),
+      };
 
-    const handleAnswerSelect = (choice) => {
-        setSelectedAnswer(choice);
-    };
+      try {
+        const token = localStorage.getItem("token");
+        const response = await axios.post(
+          `${API_BASE_URL}/api/quizzes/${quizData.id}/submit/`,
+          submissionData,
+          { headers: { Authorization: `Token ${token}` } }
+        );
 
-    const handleNextQuestion = () => {
-        if (currentQuestionIndex < quizData.questions.length - 1) {
-            setCurrentQuestionIndex(prev => prev + 1);
-            setSelectedAnswer(null);
-            setShowFeedback(false);
-        } else {
-            alert("Quiz finished! Awaiting backend submission...");
-            // Logic to submit the quiz will go here
-        }
-    };
-    
-    // NEW: Handle the final quiz submission to the backend
-    const handleSubmit = async () => {
-        // Collect all answers
-        const allAnswers = quizData.questions.map((q, index) => ({
-            question_id: q.id,
-            selected_option: selectedAnswer // This is a simplification; a full implementation would store all answers
-        }));
+        // ✅ Instead of overriding, update cumulative score
+        const isPassed = response.data.passed;
+        const correctThisQuiz = response.data.score; // usually 1 if correct, 0 if fail
+        const totalThisQuiz = response.data.total_questions; // usually 1 per quiz
 
-        const submissionData = {
-            answers: allAnswers
-        };
-        console.log("Submitting answers:", submissionData.answers); // <-- Add this line
-        console.log("Correct answer for current question:", currentQuestion.correct_answer); // <-- Add this line
-        
-        try {
-            const token = localStorage.getItem('token');
-            const response = await axios.post(
-                `${API_BASE_URL}/api/quizzes/${quizData.id}/submit/`,
-                submissionData,
-                {
-                    headers: {
-                        Authorization: `Token ${token}`
-                    }
-                }
-            );
-            setQuizResult(response.data); // Store the full response
-            
-            // This will replace the old alert logic
-            if (response.data.passed) {
-                onQuizSubmitted(true);
-            } else {
-                onQuizSubmitted(false); // Call with 'false' on fail
-            }
+        setCumulativeCorrect((prev) => prev + correctThisQuiz);
+        setCumulativeAttempts((prev) => prev + totalThisQuiz);
 
-        } catch (error) {
-            console.error("Error submitting quiz:", error.response || error);
-            alert("Quiz submission failed. Please try again.");
-            onQuizSubmitted(false);
-        }
-    };
+        setQuizResult({
+          passed: isPassed,
+          score: cumulativeCorrect + correctThisQuiz,
+          total_questions: cumulativeAttempts + totalThisQuiz,
+        });
+      } catch (error) {
+        alert("Quiz submission failed.");
+        console.error("Error submitting quiz:", error.response || error);
+        onQuizSubmitted(false);
+      }
+    }
+  };
 
-    return (
-        <div className="quiz-container" style={quizContainerStyle}>
-            {quizResult ? (
-                // New UI to display the results after submission
-                <div>
-                    <h3>Quiz Results</h3>
-                    <p>Your score: {quizResult.score} / {quizResult.total_questions}</p>
-                    <p>{quizResult.passed ? '✅ You passed!' : '❌ You failed.'}</p>
-                    <button onClick={() => onQuizSubmitted(quizResult.passed)}>
-                        Continue
-                    </button>
-                </div>
-            ) : (
-                // Original UI to show the questions
-                <div>
-                    <h3>Quiz Time!</h3>
-                    <h4>{currentQuestion.question_text || "Untitled Question"}</h4>
+  return (
+    <div style={quizContainerStyle}>
+      {quizResult ? (
+        <div style={quizResultBoxStyle}>
+          <h3>Quiz Results</h3>
+          <p>
+            Your score: {quizResult.score} / {quizResult.total_questions}
+          </p>
+          <p>{quizResult.passed ? "✅ You passed!" : "❌ You failed."}</p>
 
-                    {safeChoices.length > 0 ? (
-                        <div className="quiz-choices" style={choicesContainerStyle}>
-                            {safeChoices.map((choice, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => handleAnswerSelect(choice)}
-                                    style={{
-                                        ...choiceButtonStyle,
-                                        backgroundColor: selectedAnswer === choice ? '#007BFF' : '#E9ECEF'
-                                    }}
-                                >
-                                    {choice}
-                                </button>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="quiz-no-choices">No choices provided.</p>
-                    )}
-
-                    {selectedAnswer && (
-                        <button
-                            onClick={handleSubmit} // Use the new handleSubmit
-                            style={{
-                                ...submitButtonStyle,
-                                backgroundColor: '#28A745'
-                            }}
-                        >
-                            Submit
-                        </button>
-                    )}
-                </div>
-            )}
+          <button
+            onClick={() => onQuizSubmitted(quizResult.passed)}
+            style={{ ...submitButtonStyle }}
+          >
+            Continue
+          </button>
         </div>
-    );
+      ) : (
+        <div>
+          <h3>Quiz Time!</h3>
+          <h4>{currentQuestion.question_text || "Untitled Question"}</h4>
+          {safeChoices.length > 0 ? (
+            <div className="quiz-choices" style={choicesContainerStyle}>
+              {safeChoices.map((choice, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleAnswerSelect(choice)}
+                  style={{
+                    ...choiceButtonStyle,
+                    backgroundColor:
+                      selectedAnswer === choice ? "#007BFF" : "#E9ECEF",
+                  }}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="quiz-no-choices">No choices provided.</p>
+          )}
+          {selectedAnswer && (
+            <button
+              onClick={handleNext}
+              style={{ ...submitButtonStyle, backgroundColor: "#28A745" }}
+            >
+              {currentQuestionIndex < quizData.questions.length - 1
+                ? "Next Question"
+                : "Submit Quiz"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
-// Basic CSS styles for the component (from your original code)
+// Styles
 const quizContainerStyle = {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    backgroundColor: '#fff',
-    padding: '20px',
-    borderRadius: '10px',
-    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-    zIndex: 100,
-    textAlign: 'center',
-    color: '#343A40'
+  position: "absolute",
+  top: "50%",
+  left: "50%",
+  transform: "translate(-50%, -50%)",
+  backgroundColor: "#fff",
+  padding: "20px",
+  borderRadius: "10px",
+  boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
+  zIndex: 100,
+  textAlign: "center",
+  color: "#343A40",
 };
+
+const quizResultBoxStyle = {
+  backgroundColor: "#fff",
+  border: "1px solid #ddd",
+  borderRadius: "10px",
+  padding: "20px",
+  boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
+  textAlign: "center",
+};
+
 const choicesContainerStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-    marginTop: '15px'
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  marginTop: "15px",
 };
+
 const choiceButtonStyle = {
-    padding: '10px',
-    border: 'none',
-    borderRadius: '5px',
-    cursor: 'pointer',
-    color: 'black'
+  padding: "10px",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  color: "black",
 };
+
 const submitButtonStyle = {
-    padding: '10px 20px',
-    marginTop: '20px',
-    border: 'none',
-    borderRadius: '5px',
-    cursor: 'pointer',
-    color: 'white',
-    fontWeight: 'bold'
+  padding: "10px 20px",
+  marginTop: "20px",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  color: "white",
+  fontWeight: "bold",
 };
