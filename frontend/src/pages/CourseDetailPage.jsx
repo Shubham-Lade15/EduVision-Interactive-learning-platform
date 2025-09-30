@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import QuizComponent from '../components/QuizComponent';
 import ReactMarkdown from 'react-markdown';
+import CodeEditor from '../components/CodeEditor';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
@@ -280,6 +281,10 @@ return (
         ) : (
           <p>No videos uploaded for this course yet.</p>
         )}
+      </div>
+      <div style={{ width: '80%', marginTop: '30px' }}>
+             {/* Only show the editor if a user is logged in */}
+            {user && <CodeEditor />} 
       </div>
     </div>
   );

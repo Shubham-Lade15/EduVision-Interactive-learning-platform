@@ -1,4 +1,5 @@
 # backend/courses/views.py
+import base64
 import whisper
 import os
 import nltk
@@ -6,6 +7,8 @@ import json
 import traceback
 import random
 import numpy as np
+import requests
+import json
 from rest_framework import viewsets, status, permissions
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes, api_view, parser_classes, authentication_classes
@@ -15,12 +18,12 @@ from django.conf import settings
 from django.db.models import JSONField
 from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer
 from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer
-from rest_framework.decorators import api_view
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
 from users.permissions import IsTutor
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 from django.contrib.auth import get_user_model
 User = get_user_model()
@@ -330,3 +333,117 @@ def video_upload_view(request):
         serializer.save(tutor=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# --- JUDGE0 LANGUAGE ID MAPPING ---
+# These are the stable Language IDs for Judge0 CE v1.13.1
+JUDGE0_LANG_MAP = {
+    'python': 71,  # Python 3
+    'javascript': 63, # Javascript (Node.js)
+    'java': 62,    # Java
+    'cpp': 52,     # C++ (GCC)
+}
+
+# --- JUDGE0 API CONFIGURATION ---
+JUDGE0_API_URL = "https://ce.judge0.com/submissions"
+BASE64_ENCODE_REQUIRED = True
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated]) 
+def run_code_view(request):
+    """
+    Handles code execution request by forwarding to the Judge0 API.
+    """
+
+     # JUDGE0 API CONFIGURATION (URL remains the same)
+    JUDGE0_API_URL = "https://ce.judge0.com/submissions"
+    
+    # --- FIX: Define Query Parameters for Synchronous Execution ---
+    JUDGE0_PARAMS = {
+        'base64_encoded': 'true',  # Already set in the payload, but good to set here
+        'fields': 'stdout,stderr,status_id,status,compile_output,time,memory', # Request specific fields
+        'wait': 'true' # <-- THIS FORCES SYNCHRONOUS EXECUTION (Wait for result, not token)
+    }
+
+    code = request.data.get('code', '')
+    language = request.data.get('language', 'python')
+
+    if not code:
+        return Response({'error': f"No code provided for {language}."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get the Judge0 ID, defaulting to Python if mapping fails
+    language_id = JUDGE0_LANG_MAP.get(language, JUDGE0_LANG_MAP['python'])
+    
+    try:
+        # Base64-encode the source code as required by Judge0 best practice
+        encoded_code = base64.b64encode(code.encode('utf-8')).decode('utf-8')
+    except Exception:
+        return Response({'error': 'Failed to encode source code.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    try:
+        # Judge0 synchronous submission payload
+        payload = {
+            "language_id": language_id,
+            "source_code": encoded_code,
+            "base64_encoded": BASE64_ENCODE_REQUIRED,
+            "cpu_time_limit": 5, 
+        }
+
+        api_response = requests.post(
+            JUDGE0_API_URL, 
+            json=payload, 
+            params=JUDGE0_PARAMS,
+            timeout=10
+        )
+
+        # Check for non-200 status codes from Judge0 itself
+        if api_response.status_code != status.HTTP_200_OK:
+            error_message = api_response.json().get('error', api_response.text)
+            return Response(
+                {'error': f'Judge0 Execution API Error ({api_response.status_code}): {error_message}'},
+                status=status.HTTP_502_BAD_GATEWAY # 502 indicates external server error
+            )
+
+        submission_result = api_response.json()
+        
+        # Judge0 output fields are Base64-encoded, so we must decode them
+        def decode_output(encoded_str):
+            if encoded_str and BASE64_ENCODE_REQUIRED:
+                # The ignore handles cases where the API returns malformed Base64 
+                return base64.b64decode(encoded_str).decode('utf-8', errors='ignore')
+            return encoded_str if encoded_str else ""
+
+        # Decode all relevant output fields
+        status_description = submission_result.get('status', {}).get('description', 'Unknown Error')
+        stdout = decode_output(submission_result.get('stdout'))
+        stderr = decode_output(submission_result.get('stderr'))
+        compile_output = decode_output(submission_result.get('compile_output'))
+        
+        # Determine the final output message for the frontend
+        if status_description in ["Accepted", "Processing"]:
+            final_output = stdout if stdout else "Execution finished with no output."
+            final_status_code = status.HTTP_200_OK
+        elif status_description == "Compilation Error":
+            final_output = f"Compilation Error:\n{compile_output}"
+            final_status_code = status.HTTP_400_BAD_REQUEST
+        else:
+            # Runtime Error, Time Limit Exceeded, Internal Error
+            final_output = f"{status_description}\n{stderr}"
+            final_status_code = status.HTTP_400_BAD_REQUEST
+
+        return Response({
+            'output': final_output,
+            'status': status_description,
+            'language': language,
+            'runtime_details': f'Status: {status_description}',
+            'time': submission_result.get('time'),
+            'memory': submission_result.get('memory')
+        }, status=final_status_code)
+
+    except requests.exceptions.RequestException as e:
+        # Handle network errors, timeouts, or DNS resolution failure
+        return Response(
+            {'error': f'Code execution failed: Network connection issue or timeout. ({e})'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
