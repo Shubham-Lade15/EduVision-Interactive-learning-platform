@@ -151,6 +151,12 @@ CORS_ALLOWED_ORIGINS = [
 
 GEMINI_API_KEY = "AIzaSyBbsjcXXSZZqX2QJ9225WfbebdPu8ZKl1M"
 
+# settings.py
+
+RAPIDAPI_JUDGE0_HOST = "judge0-ce.p.rapidapi.com"
+RAPIDAPI_JUDGE0_KEY = "7f3ae7c5cdmsh80dea708eb41e6bp16385bjsn233cb65206a3"
+
+
 # Set the custom user model
 AUTH_USER_MODEL = 'users.User'
 

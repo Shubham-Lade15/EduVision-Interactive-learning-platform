@@ -30,11 +30,83 @@ User = get_user_model()
 
 # Initialize Gemini API
 genai.configure(api_key=settings.GEMINI_API_KEY)
-model_gemini = genai.GenerativeModel('models/gemini-1.5-flash')
+model_gemini = genai.GenerativeModel('gemini-2.5-flash')
 
 # Load other NLP models once
 model_st = SentenceTransformer('all-MiniLM-L6-v2')
 nlp = nltk.data.load('tokenizers/punkt/english.pickle')
+
+# Define constants for the RapidAPI endpoint
+# Base URL structure: https://{HOST}/submissions
+RAPIDAPI_JUDGE0_URL = f"https://{settings.RAPIDAPI_JUDGE0_HOST}/submissions?base64_encoded=false&wait=true" 
+
+# Helper function to map front-end language names to Judge0 Language IDs
+# This map remains the same standard Judge0 ID map.
+def get_judge0_language_id(language_name):
+    language_map = {
+        'python': 71,   # Python 3
+        'javascript': 63, # NodeJS
+        'java': 62,       # OpenJDK 13
+        'cpp': 54,        # C++ (GCC 9.2.0)
+        'c': 50,          # C (GCC 9.1.0)
+        'sql': 82,        # SQL (SQLite 3.32.3)
+    }
+    return language_map.get(language_name.lower())
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def code_execute_view(request):
+    code = request.data.get('code')
+    language = request.data.get('language')
+
+    if not code or not language:
+        return Response({'error': 'Code and language are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    language_map = {
+        'python': 71,
+        'javascript': 63,
+        'java': 62,
+        'cpp': 54,
+        'c': 50,
+        'sql': 82
+    }
+    language_id = language_map.get(language.lower())
+    if not language_id:
+        return Response({'error': f"Language '{language}' is not supported."}, status=status.HTTP_400_BAD_REQUEST)
+
+    payload = {
+        "source_code": code,
+        "language_id": language_id,
+        "stdin": "",
+    }
+
+    headers = {
+        'Content-Type': 'application/json',
+        'x-rapidapi-host': settings.RAPIDAPI_JUDGE0_HOST,
+        'x-rapidapi-key': settings.RAPIDAPI_JUDGE0_KEY
+    }
+
+    url = f"https://{settings.RAPIDAPI_JUDGE0_HOST}/submissions?base64_encoded=false&wait=true"
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response.raise_for_status()
+        result = response.json()
+
+        output = result.get('stdout') or result.get('compile_output') or result.get('stderr') or "No output"
+        status_desc = result.get('status', {}).get('description', 'Unknown')
+
+        return Response({
+            'status': status_desc,
+            'output': output,
+            'time': result.get('time'),
+            'memory': result.get('memory')
+        })
+
+    except requests.exceptions.RequestException as e:
+        return Response({'error': f"API request failed: {str(e)}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class CourseViewSet(viewsets.ModelViewSet):
@@ -184,6 +256,8 @@ class VideoViewSet(viewsets.ModelViewSet):
                 choices = quiz_data.get("choices") or []
                 correct = quiz_data.get("correct_answer") or quiz_data.get("answer") or ""
 
+                cleaned_correct_answer = correct.strip() 
+
                 if not q_text or not choices or not correct:
                     # Skip invalid quiz entry instead of crashing
                     continue
@@ -283,6 +357,16 @@ class QuizViewSet(viewsets.ModelViewSet):
                     question = quiz_questions.get(id=question_id)
                 except Question.DoesNotExist:
                     continue  # Skip if question not found
+
+                # 1. Clean the submitted answer string
+                cleaned_submitted = selected_option.strip()
+
+                # 2. Clean the stored correct answer string
+                # This addresses invisible whitespace/carriage returns
+                cleaned_correct = question.correct_answer.strip()
+
+                # Check if the clean submitted option MATCHES the clean stored option
+                is_correct = (cleaned_submitted == cleaned_correct)
                 
                 # Check if the submitted answer is correct
                 print(f"Submitted: '{selected_option}', Correct: '{question.correct_answer}'")
@@ -333,117 +417,3 @@ def video_upload_view(request):
         serializer.save(tutor=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# --- JUDGE0 LANGUAGE ID MAPPING ---
-# These are the stable Language IDs for Judge0 CE v1.13.1
-JUDGE0_LANG_MAP = {
-    'python': 71,  # Python 3
-    'javascript': 63, # Javascript (Node.js)
-    'java': 62,    # Java
-    'cpp': 52,     # C++ (GCC)
-}
-
-# --- JUDGE0 API CONFIGURATION ---
-JUDGE0_API_URL = "https://ce.judge0.com/submissions"
-BASE64_ENCODE_REQUIRED = True
-
-@api_view(['POST'])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated]) 
-def run_code_view(request):
-    """
-    Handles code execution request by forwarding to the Judge0 API.
-    """
-
-     # JUDGE0 API CONFIGURATION (URL remains the same)
-    JUDGE0_API_URL = "https://ce.judge0.com/submissions"
-    
-    # --- FIX: Define Query Parameters for Synchronous Execution ---
-    JUDGE0_PARAMS = {
-        'base64_encoded': 'true',  # Already set in the payload, but good to set here
-        'fields': 'stdout,stderr,status_id,status,compile_output,time,memory', # Request specific fields
-        'wait': 'true' # <-- THIS FORCES SYNCHRONOUS EXECUTION (Wait for result, not token)
-    }
-
-    code = request.data.get('code', '')
-    language = request.data.get('language', 'python')
-
-    if not code:
-        return Response({'error': f"No code provided for {language}."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Get the Judge0 ID, defaulting to Python if mapping fails
-    language_id = JUDGE0_LANG_MAP.get(language, JUDGE0_LANG_MAP['python'])
-    
-    try:
-        # Base64-encode the source code as required by Judge0 best practice
-        encoded_code = base64.b64encode(code.encode('utf-8')).decode('utf-8')
-    except Exception:
-        return Response({'error': 'Failed to encode source code.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    try:
-        # Judge0 synchronous submission payload
-        payload = {
-            "language_id": language_id,
-            "source_code": encoded_code,
-            "base64_encoded": BASE64_ENCODE_REQUIRED,
-            "cpu_time_limit": 5, 
-        }
-
-        api_response = requests.post(
-            JUDGE0_API_URL, 
-            json=payload, 
-            params=JUDGE0_PARAMS,
-            timeout=10
-        )
-
-        # Check for non-200 status codes from Judge0 itself
-        if api_response.status_code != status.HTTP_200_OK:
-            error_message = api_response.json().get('error', api_response.text)
-            return Response(
-                {'error': f'Judge0 Execution API Error ({api_response.status_code}): {error_message}'},
-                status=status.HTTP_502_BAD_GATEWAY # 502 indicates external server error
-            )
-
-        submission_result = api_response.json()
-        
-        # Judge0 output fields are Base64-encoded, so we must decode them
-        def decode_output(encoded_str):
-            if encoded_str and BASE64_ENCODE_REQUIRED:
-                # The ignore handles cases where the API returns malformed Base64 
-                return base64.b64decode(encoded_str).decode('utf-8', errors='ignore')
-            return encoded_str if encoded_str else ""
-
-        # Decode all relevant output fields
-        status_description = submission_result.get('status', {}).get('description', 'Unknown Error')
-        stdout = decode_output(submission_result.get('stdout'))
-        stderr = decode_output(submission_result.get('stderr'))
-        compile_output = decode_output(submission_result.get('compile_output'))
-        
-        # Determine the final output message for the frontend
-        if status_description in ["Accepted", "Processing"]:
-            final_output = stdout if stdout else "Execution finished with no output."
-            final_status_code = status.HTTP_200_OK
-        elif status_description == "Compilation Error":
-            final_output = f"Compilation Error:\n{compile_output}"
-            final_status_code = status.HTTP_400_BAD_REQUEST
-        else:
-            # Runtime Error, Time Limit Exceeded, Internal Error
-            final_output = f"{status_description}\n{stderr}"
-            final_status_code = status.HTTP_400_BAD_REQUEST
-
-        return Response({
-            'output': final_output,
-            'status': status_description,
-            'language': language,
-            'runtime_details': f'Status: {status_description}',
-            'time': submission_result.get('time'),
-            'memory': submission_result.get('memory')
-        }, status=final_status_code)
-
-    except requests.exceptions.RequestException as e:
-        # Handle network errors, timeouts, or DNS resolution failure
-        return Response(
-            {'error': f'Code execution failed: Network connection issue or timeout. ({e})'},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
