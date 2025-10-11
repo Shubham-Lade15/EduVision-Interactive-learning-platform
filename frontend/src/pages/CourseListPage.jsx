@@ -1,54 +1,74 @@
-// src/pages/CourseListPage.jsx
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
+import "../index.css";
 
-const API_URL = "http://127.0.0.1:8000/api/courses/";
+const API_BASE_URL = "http://127.0.0.1:8000";
 
-function CourseListPage({ user }) {
-  const navigate = useNavigate();
+const CourseListPage = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  console.log("CourseListPage received user:", user);
 
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const response = await axios.get(API_URL, {
-          headers: token ? { Authorization: `Token ${token}` } : {},
-        });
+        const response = await axios.get(`${API_BASE_URL}/api/courses/`);
         setCourses(response.data);
-      } catch (err) {
-        setError("Failed to load courses.");
-        console.error("Error fetching courses:", err.response || err);
-      } finally {
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching courses:", error);
         setLoading(false);
       }
     };
-
     fetchCourses();
   }, []);
 
-  if (loading) return <div>Loading courses...</div>;
-  if (error) return <div>Error: {error}</div>;
-
-  const handleAddCourse = () => {
-    navigate("/admin-add-course");
-  };
   return (
-        <div>
-        <h1>Available Courses</h1>
-        {user?.role === 'tutor' && (
-            <div style={{ marginBottom: '20px' }}>
-                <Link to="/create-course" style={{ marginRight: '10px' }}>Add New Course</Link>
-                <Link to="/upload-video">Upload New Video</Link>
-            </div>
-            )}
-            {/* ... your courses list ... */}
+    <div className="course-list-page fade-in">
+      {/* HEADER */}
+      <header className="course-list-header">
+        <h1>All Courses</h1>
+        <p>Choose from a variety of skill-building courses crafted for you.</p>
+      </header>
+
+      {/* COURSE GRID */}
+      {loading ? (
+        <p style={{ textAlign: "center", marginTop: "50px" }}>Loading...</p>
+      ) : courses.length === 0 ? (
+        <p style={{ textAlign: "center", marginTop: "50px" }}>
+          No courses found.
+        </p>
+      ) : (
+        <div className="course-grid">
+          {courses.map((course) => (
+            <motion.div
+              key={course.id}
+              className="course-card-grid"
+              whileHover={{ scale: 1.05 }}
+              transition={{ type: "spring", stiffness: 200 }}
+            >
+              {/* Square gradient placeholder */}
+              <div className="course-square-placeholder" />
+
+              <div className="course-details">
+                <h3>{course.title}</h3>
+                <p className="course-tutor">
+                  By {course.tutor_name || "EduVision Instructor"}
+                </p>
+                <Link
+                  to={`/courses/${course.id}`}  // ✅ Corrected path
+                  className="cta-btn view-course-btn"
+                >
+                  View Course
+                </Link>
+              </div>
+            </motion.div>
+          ))}
         </div>
-    );
-}
+      )}
+    </div>
+  );
+};
+
 export default CourseListPage;

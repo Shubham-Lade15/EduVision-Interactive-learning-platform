@@ -1,113 +1,116 @@
 // frontend/src/components/CodeEditor.jsx
-
 import React, { useState } from 'react';
+import Editor from '@monaco-editor/react';
 import axios from 'axios';
-import Editor from '@monaco-editor/react'; // <-- Monaco Editor
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
-// List of supported languages for the dropdown
-const SUPPORTED_LANGUAGES = [
-  { id: 'python', name: 'Python' },
-  { id: 'javascript', name: 'JavaScript' },
-  { id: 'java', name: 'Java' }, 
-  { id: 'cpp', name: 'C++' },
+const languageOptions = [
+    { name: 'Python', value: 'python', judge0_id: 71 }, // Judge0 IDs are for simulation reference
+    { name: 'JavaScript', value: 'javascript', judge0_id: 63 },
+    { name: 'Java', value: 'java', judge0_id: 62 },
+    { name: 'C++', value: 'cpp', judge0_id: 54 },
+    { name: 'C', value: 'c', judge0_id: 50 },
+    // SQL, HTML/CSS are typically run differently, but we'll include them for language selection
+    { name: 'SQL', value: 'sql', judge0_id: 82 }, 
+    { name: 'HTML', value: 'html', judge0_id: null },
 ];
 
-// Helper to set initial boilerplate code
-const getBoilerplate = (lang) => {
-    switch(lang) {
-        case 'python': return "# Python Code\nprint('Hello, EduVision!')";
-        case 'javascript': return "// JavaScript Code\nconsole.log('Hello, EduVision!');";
-        case 'java': return "// Java Code\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, EduVision!\");\n  }\n}";
-        case 'cpp': return "// C++ Code\n#include <iostream>\nint main() {\n  std::cout << \"Hello, EduVision!\" << std::endl;\n  return 0;\n}";
-        default: return '// Write your code here...';
-    }
+const initialCode = {
+    python: 'print("Hello, EduVision!")',
+    javascript: 'console.log("Hello, EduVision!");',
+    java: 'class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, EduVision!");\n  }\n}',
+    // ... add initial code for other languages
+    sql: 'SELECT * FROM users;', 
+    c: '#include <stdio.h>\nint main() {\n  printf("Hello, EduVision!");\n  return 0;\n}',
+    cpp: '#include <iostream>\nint main() {\n  std::cout << "Hello, EduVision!";\n  return 0;\n}'
 };
 
 export default function CodeEditor() {
-  const [language, setLanguage] = useState(SUPPORTED_LANGUAGES[0].id);
-  const [code, setCode] = useState(getBoilerplate(SUPPORTED_LANGUAGES[0].id));
-  const [output, setOutput] = useState('Execution output will appear here...');
-  const [isRunning, setIsRunning] = useState(false);
+    const [code, setCode] = useState(initialCode.python);
+    const [output, setOutput] = useState('Run your code to see the output...');
+    const [language, setLanguage] = useState(languageOptions[0]);
+    const [isLoading, setIsLoading] = useState(false);
 
-  const handleLanguageChange = (e) => {
-    const newLang = e.target.value;
-    setLanguage(newLang);
-    setCode(getBoilerplate(newLang)); // Reset code to boilerplate
-    setOutput('Execution output will appear here...');
-  };
+    const handleCodeChange = (newCode) => {
+        setCode(newCode);
+    };
 
-  const handleRunCode = async () => {
-    setIsRunning(true);
-    setOutput('Executing code...');
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setOutput('Error: You must be logged in to run code.');
-        return;
-      }
+    const handleLanguageChange = (e) => {
+        const selectedLang = languageOptions.find(opt => opt.value === e.target.value);
+        setLanguage(selectedLang);
+        // Load initial code for the newly selected language if it exists
+        setCode(initialCode[selectedLang.value] || ''); 
+        setOutput('Language changed. Ready to run...');
+    };
 
-      const response = await axios.post(
-        `${API_BASE_URL}/api/run-code/`, 
-        { code, language },
-        { headers: { Authorization: `Token ${token}` } }
-      );
+    const handleSubmit = async () => {
+        setIsLoading(true);
+        setOutput('Executing code...');
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(
+                `${API_BASE_URL}/api/code/execute/`,
+                {
+                    code: code,
+                    language: language.value, // Send 'python', 'javascript', etc.
+                    judge0_id: language.judge0_id // Optional: Judge0 ID for backend
+                },
+                {
+                    headers: { Authorization: `Token ${token}` }
+                }
+            );
+            
+            // Display output from the backend (which simulates the Judge0/Docker response)
+            setOutput(response.data.output || response.data.error || 'Execution completed.');
 
-      // Display the execution output (stdout/stderr)
-      setOutput(`[${response.data.runtime_details}]\n\n${response.data.output}`);
-      
-    } catch (error) {
-      // Handle 400 (sandbox error) or 503 (API connection error)
-      const errorMessage = error.response?.data?.error || 'Execution failed due to an unknown server error.';
-      setOutput(`Error: ${errorMessage}`);
-      console.error("Code Execution Error:", error.response || error);
-    } finally {
-      setIsRunning(false);
-    }
-  };
+        } catch (error) {
+            setOutput('Error executing code. Check connection or your code.');
+            console.error("Execution error:", error.response || error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-  return (
-    <div style={{ marginTop: '20px', padding: '20px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '8px' }}>
-      <h3>🖥️ Real-time Code Editor</h3>
-      <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <label style={{ fontWeight: 'bold' }}>
-          Language:
-          <select 
-            value={language} 
-            onChange={handleLanguageChange}
-            disabled={isRunning}
-            style={{ marginLeft: '10px', padding: '5px' }}
-          >
-            {SUPPORTED_LANGUAGES.map(lang => (
-              <option key={lang.id} value={lang.id}>{lang.name}</option>
-            ))}
-          </select>
-        </label>
-        <button onClick={handleRunCode} disabled={isRunning} style={{ padding: '8px 15px', backgroundColor: isRunning ? '#6c757d' : '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          {isRunning ? 'Running...' : '▶ Run Code'}
-        </button>
-      </div>
-      
-      {/* MONACO EDITOR COMPONENT */}
-      <div style={{ height: '300px', marginBottom: '10px', border: '1px solid #343a40' }}>
-        <Editor
-          height="100%"
-          language={language}
-          theme="vs-dark"
-          value={code}
-          onChange={setCode}
-          options={{
-            readOnly: isRunning,
-            minimap: { enabled: false }
-          }}
-        />
-      </div>
+    return (
+        <div style={{ margin: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '8px' }}>
+            <h2>Real-time Code Editor</h2>
+            
+            <div style={{ marginBottom: '10px' }}>
+                <label>Language: </label>
+                <select value={language.value} onChange={handleLanguageChange} disabled={isLoading}>
+                    {languageOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.name}</option>
+                    ))}
+                </select>
+            </div>
 
-      <h4>Output:</h4>
-      <pre style={{ backgroundColor: '#333', color: '#00ff00', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap', border: '1px solid #00ff00' }}>
-        {output}
-      </pre>
-    </div>
-  );
+            <Editor
+                height="40vh"
+                language={language.value}
+                value={code}
+                onChange={handleCodeChange}
+                theme="vs-dark"
+                options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                }}
+            />
+
+            <button 
+                onClick={handleSubmit} 
+                disabled={isLoading}
+                style={{ marginTop: '10px', padding: '10px 20px', backgroundColor: '#28A745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+            >
+                {isLoading ? 'Running...' : 'Run Code'}
+            </button>
+            
+            <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#333', color: '#fff', borderRadius: '5px', minHeight: '100px' }}>
+                <h3>Output:</h3>
+                <pre>{output}</pre>
+            </div>
+        </div>
+    );
 }
+
+// Don't forget to export it in index.js or similar for organization if needed, but the direct export works for now.

@@ -7,6 +7,15 @@ import CourseListPage from './pages/CourseListPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import CreateCoursePage from './pages/CreateCoursePage';
 import VideoUploadForm from './components/VideoUploadForm';
+import Navbar from './components/Navbar'; 
+import DashboardHome from "./pages/DashboardHome";
+import DashboardLayout from "./components/DashboardLayout";
+import MyCoursesPage from "./pages/MyCoursesPage";
+import TutorDashboardPage from "./pages/TutorDashboardPage";
+import ProfilePage from "./pages/ProfilePage";
+
+
+
 
 function App() {
     const [user, setUser] = useState(null);
@@ -33,6 +42,7 @@ function App() {
 
     return (
         <Router>
+            <Navbar user={user} handleLogout={handleLogout} />
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
@@ -41,6 +51,10 @@ function App() {
                 <Route path="/courses/:courseId" element={<CourseDetailPage user={user} />} />
                 <Route path="/create-course" element={<CreateCoursePage />} />
                 <Route path="/upload-video" element={<VideoUploadForm />} />
+                <Route path="/dashboard" element={<DashboardHome user={user} />} />
+                <Route path="/my-courses" element={<MyCoursesPage user={user} />} />
+                <Route path="/tutor-dashboard" element={<TutorDashboardPage user={user} />} />
+                <Route path="/profile" element={<ProfilePage user={user} />} />
             </Routes>
         </Router>
     );

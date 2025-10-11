@@ -1,28 +1,64 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import '../index.css';
 
-function Navbar({ user, handleLogout }) {
-    return (
-        <nav style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', backgroundColor: '#333', color: 'white' }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-                <Link to="/" style={{ color: 'white', textDecoration: 'none', marginRight: '20px' }}>Home</Link>
-                <Link to="/courses" style={{ color: 'white', textDecoration: 'none' }}>Courses</Link>
-            </div>
-            <div>
-                {user ? (
-                    <>
-                        <span style={{ marginRight: '10px' }}>Welcome, {user.username} ({user.role})</span>
-                        <button onClick={handleLogout} style={{ backgroundColor: 'transparent', border: '1px solid white', color: 'white', padding: '5px 10px' }}>Logout</button>
-                    </>
-                ) : (
-                    <>
-                        <Link to="/login" style={{ color: 'white', textDecoration: 'none', marginRight: '10px' }}>Login</Link>
-                        <Link to="/register" style={{ color: 'white', textDecoration: 'none' }}>Register</Link>
-                    </>
-                )}
-            </div>
-        </nav>
-    );
-}
+const Navbar = ({ user }) => {
+  const [darkMode, setDarkMode] = useState(false);
+  const navigate = useNavigate();
+
+  // Apply theme to body
+  useEffect(() => {
+    if (darkMode) document.body.classList.add('dark-mode');
+    else document.body.classList.remove('dark-mode');
+  }, [darkMode]);
+
+  return (
+    <nav className="navbar fade-in">
+      {/* LOGO */}
+      <div className="nav-logo" onClick={() => navigate('/')}>
+        EduVision<span style={{ color: 'var(--color-secondary)' }}></span>
+      </div>
+
+      {/* SEARCH BAR */}
+      <input
+        type="text"
+        placeholder="Search for courses..."
+        className="search-bar"
+      />
+
+      {/* NAV LINKS */}
+      <div className="nav-links">
+        <Link to="/" className="nav-link">Home</Link>
+        <Link to="/courses" className="nav-link">Courses</Link>
+        {user && <Link to="/my-courses" className="nav-link">My Learning</Link>}
+        <Link to="/about" className="nav-link">About</Link>
+
+        {/* THEME TOGGLE */}
+        <button
+          className="theme-toggle"
+          onClick={() => setDarkMode(!darkMode)}
+          title="Toggle Theme"
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </button>
+
+        {/* PROFILE */}
+        {user ? (
+          <div
+            className="profile-avatar"
+            onClick={() => navigate('/profile')}
+            title="Go to Profile"
+          >
+            {user.name ? user.name[0].toUpperCase() : 'U'}
+          </div>
+        ) : (
+          <Link to="/login" className="cta-btn">
+            Login
+          </Link>
+        )}
+      </div>
+    </nav>
+  );
+};
 
 export default Navbar;
