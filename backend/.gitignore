@@ -1,0 +1,44 @@
+--- General Operating System Files ---
+.DS_Store
+Thumbs.db
+
+--- Python / Django / Virtual Environment ---
+Virtual Environment
+venv/
+env/
+*.swp
+*.bak
+
+Byte-code / Compiled files
+pycache/
+*.pyc
+*.pyd
+*.so
+
+Database files (sqlite3 is for development only)
+*.sqlite3
+/db.sqlite3
+
+Django-specific cache and media
+/htmlcov/
+.coverage
+/media/ # Location for user-uploaded videos, should not be tracked
+
+IDE/Editor Files
+.idea/
+.vscode/
+
+--- Node.js / React (Frontend) ---
+Dependencies
+/frontend/node_modules
+/frontend/build
+/frontend/dist
+
+Logs
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+
+--- Environment & Secret Keys ---
+Local secrets and environment variables
+.env
