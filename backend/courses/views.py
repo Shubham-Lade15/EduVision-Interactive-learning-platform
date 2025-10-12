@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db.models import JSONField
 from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer
-from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer
+from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, StudentProgress
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
@@ -122,12 +122,39 @@ class CourseViewSet(viewsets.ModelViewSet):
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all()
     serializer_class = VideoSerializer
+    
+    # NEW: Pass request to serializer context for fetching user progress
+    def get_serializer_context(self):
+        return {'request': self.request} 
+
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            permission_classes = [permissions.AllowAny]
+        if self.action in ['list', 'retrieve', 'record_progress']:
+            permission_classes = [permissions.IsAuthenticated] # Changed from AllowAny for progress tracking
         else:
             permission_classes = [IsTutor]
         return [permission() for permission in permission_classes]
+    
+    # NEW ACTION: To record video completion from the frontend
+    @action(detail=True, methods=['post'], url_path='record-progress')
+    @permission_classes([permissions.IsAuthenticated])
+    def record_progress(self, request, pk=None):
+        video = self.get_object()
+        student = request.user
+        completed = request.data.get('completed', False)
+        last_time = request.data.get('last_watched_time', None)
+
+        progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
+        if completed:
+            progress.video_completed = True
+        if last_time is not None:
+            try:
+                progress.last_watched_time = float(last_time)
+            except:
+                pass
+        progress.save()
+
+        serializer = StudentProgressSerializer(progress)
+        return Response({'status': 'progress recorded', 'progress': serializer.data}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='transcribe')
     def transcribe_video(self, request, pk=None):
@@ -327,73 +354,76 @@ class VideoViewSet(viewsets.ModelViewSet):
 class QuizViewSet(viewsets.ModelViewSet):
     queryset = Quiz.objects.all()
     serializer_class = QuizSerializer
-    
+
     @action(detail=True, methods=['post'], url_path='submit')
+    @permission_classes([permissions.IsAuthenticated])
     def submit_quiz(self, request, pk=None):
         try:
             quiz = self.get_object()
-            student = User.objects.first()  # Assuming you've set up authentication
-
-            # Receive answers from the request body
+            student = request.user 
             submitted_answers = request.data.get('answers', [])
             
-            # Create a QuizAttempt instance
-            quiz_attempt = QuizAttempt.objects.create(
-                student=student,
-                quiz=quiz,
-            )
-
+            # --- (1) Calculate Score (Your existing logic, adapted for authenticated user) ---
+            quiz_attempt = QuizAttempt.objects.create(student=student, quiz=quiz)
             score = 0
-            
-            # Get the correct answers for this quiz's questions
             quiz_questions = quiz.questions.all()
-            
+
             for submitted_answer in submitted_answers:
                 question_id = submitted_answer.get('question_id')
                 selected_option = submitted_answer.get('selected_option')
-                
-                # Find the corresponding question object
                 try:
                     question = quiz_questions.get(id=question_id)
+                    is_correct = (selected_option.strip() == question.correct_answer.strip())
+                    if is_correct:
+                        score += 1
+                    StudentAnswer.objects.create(
+                        attempt=quiz_attempt, question=question, selected_option=selected_option, is_correct=is_correct
+                    )
                 except Question.DoesNotExist:
-                    continue  # Skip if question not found
-
-                # 1. Clean the submitted answer string
-                cleaned_submitted = selected_option.strip()
-
-                # 2. Clean the stored correct answer string
-                # This addresses invisible whitespace/carriage returns
-                cleaned_correct = question.correct_answer.strip()
-
-                # Check if the clean submitted option MATCHES the clean stored option
-                is_correct = (cleaned_submitted == cleaned_correct)
-                
-                # Check if the submitted answer is correct
-                print(f"Submitted: '{selected_option}', Correct: '{question.correct_answer}'")
-                print(f"Comparison after strip: '{selected_option.strip()}' == '{question.correct_answer.strip()}'")
-                is_correct = (selected_option.strip() == question.correct_answer.strip())
-                
-                if is_correct:
-                    score += 1
-                
-                # Save the student's answer
-                StudentAnswer.objects.create(
-                    attempt=quiz_attempt,
-                    question=question,
-                    selected_option=selected_option,
-                    is_correct=is_correct
-                )
-
-            # Update the score and passing status
+                    continue
+            
+            # Simple pass/fail rule: Must get at least 1 correct answer (or whatever logic you prefer)
+            is_passed = (score > 0)
             quiz_attempt.score = score
-            quiz_attempt.passed = (score > 0) # Simple pass/fail for now, can be changed later
+            quiz_attempt.passed = is_passed
             quiz_attempt.save()
 
+             # --- (2) NEW: Check/Update All Quizzes Passed Status (FIXED LOGIC) ---
+            all_quizzes_passed_status = False
+            if is_passed:
+                video = quiz.video
+                
+                # FIX: Find all UNIQUE quizzes for this video that the student has passed at least once.
+                # We use .values('quiz').distinct() to count unique quizzes that have a passing attempt.
+                passed_quizzes_count = QuizAttempt.objects.filter(
+                    quiz__video=video,        # Filter by video
+                    student=student,          # Filter by current student
+                    passed=True               # Filter for passing attempts
+                ).values('quiz').distinct().count()
+                
+                total_quizzes_count = video.quizzes.count()
+
+                # FIX: Only set status to True if the passed count equals the total count
+                if passed_quizzes_count == total_quizzes_count:
+                    all_quizzes_passed_status = True
+                
+                # Update or create the StudentProgress record
+                progress, _ = StudentProgress.objects.get_or_create(
+                    student=student, 
+                    video=video,
+                    # Ensure video_completed flag defaults to False if creating new record
+                    defaults={'all_quizzes_passed': all_quizzes_passed_status} 
+                )
+                progress.all_quizzes_passed = all_quizzes_passed_status
+                progress.save()
+
+            # --- (3) Return Response (Ensure we return the final status) ---
             return Response({
                 'status': 'Quiz submitted successfully',
                 'score': score,
                 'total_questions': len(quiz_questions),
-                'passed': quiz_attempt.passed
+                'passed': is_passed,
+                'all_quizzes_passed': all_quizzes_passed_status # Return the FINAL status of all quizzes
             }, status=status.HTTP_200_OK)
 
         except Exception as e:

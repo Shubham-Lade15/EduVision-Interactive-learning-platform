@@ -70,3 +70,18 @@ class StudentAnswer(models.Model):
     question = models.ForeignKey('Question', on_delete=models.CASCADE, null=True)
     selected_option = models.CharField(max_length=255, null=True, blank=True)
     is_correct = models.BooleanField(default=False)
+
+# backend/courses/models.py (add near other models)
+class StudentProgress(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='progresses')
+    video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='progresses')
+    video_completed = models.BooleanField(default=False)
+    all_quizzes_passed = models.BooleanField(default=False)
+    last_watched_time = models.FloatField(default=0.0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('student', 'video')
+
+    def __str__(self):
+        return f"Progress: {self.student.username} - {self.video.title}"
