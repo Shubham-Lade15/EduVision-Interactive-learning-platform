@@ -120,7 +120,7 @@ class CourseViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
 class VideoViewSet(viewsets.ModelViewSet):
-    queryset = Video.objects.all()
+    queryset = Video.objects.all().order_by('id') 
     serializer_class = VideoSerializer
     
     # NEW: Pass request to serializer context for fetching user progress
@@ -262,39 +262,51 @@ class VideoViewSet(viewsets.ModelViewSet):
                 all_quizzes.extend(smart_content.get("quizzes", []))
 
             # --- Save results into DB ---
-            video.segments = all_segments  # JSONField, save Python list
+            video.segments = all_segments
             video.save()
-
             Quiz.objects.filter(video=video).delete()
 
+            # --- NEW/UPDATED LOGIC HERE ---
             for index, quiz_data in enumerate(all_quizzes):
                 seg_index = quiz_data.get("segment_index", index)
                 seg = all_segments[seg_index] if seg_index < len(all_segments) else None
                 end_time = seg.get("end_time", 0.0) if seg else 0.0
-
+                
                 quiz = Quiz.objects.create(
                     video=video,
                     segment_index=seg_index,
                     segment_end_time=end_time
                 )
 
-                # Safely extract fields from quiz_data
                 q_text = quiz_data.get("question_text") or quiz_data.get("question") or ""
-                choices = quiz_data.get("choices") or []
-                correct = quiz_data.get("correct_answer") or quiz_data.get("answer") or ""
+                choices_list = quiz_data.get("choices") or [] # This is the list of full text choices
+                correct_key_or_text = quiz_data.get("correct_answer") or quiz_data.get("answer") or ""
 
-                cleaned_correct_answer = correct.strip() 
+                # CRITICAL FIX: Find the full correct text based on the choices list
+                # Assumes choices_list is an array of strings (e.g., ["A) Choice 1", "B) Choice 2"])
+                full_correct_answer = ""
+                for choice_text in choices_list:
+                    normalized_choice = choice_text.strip().upper()
+                    # If the choice starts with the letter key OR matches the full text
+                    if normalized_choice.startswith(correct_key_or_text.strip().upper()) or normalized_choice == correct_key_or_text.strip().upper():
+                        full_correct_answer = choice_text
+                        break
 
-                if not q_text or not choices or not correct:
+                if not q_text or not choices_list or not full_correct_answer:
                     # Skip invalid quiz entry instead of crashing
+                    print(f"Skipping invalid quiz data: {quiz_data}")
+                    quiz.delete() 
                     continue
 
                 Question.objects.create(
                     quiz=quiz,
                     question_text=q_text,
-                    choices=json.dumps(choices),
-                    correct_answer=correct,
+                    # Ensure choices are stored as a JSON string (JSONField requires this handling)
+                    choices=json.dumps(choices_list), 
+                    # CRITICAL: Store the full choice string for later comparison
+                    correct_answer=full_correct_answer.strip(), 
                 )
+
 
 
             return Response({
@@ -370,17 +382,33 @@ class QuizViewSet(viewsets.ModelViewSet):
 
             for submitted_answer in submitted_answers:
                 question_id = submitted_answer.get('question_id')
-                selected_option = submitted_answer.get('selected_option')
+                selected_option = submitted_answer.get('selected_option') # e.g., "B) FIFO..."
+
                 try:
                     question = quiz_questions.get(id=question_id)
-                    is_correct = (selected_option.strip() == question.correct_answer.strip())
-                    if is_correct:
-                        score += 1
-                    StudentAnswer.objects.create(
-                        attempt=quiz_attempt, question=question, selected_option=selected_option, is_correct=is_correct
-                    )
                 except Question.DoesNotExist:
                     continue
+                
+                # Load choices for robust validation
+                try:
+                    # Assuming question.choices is a JSON string of a list (e.g., ["A) Choice 1", "B) Choice 2"])
+                    choices_list = json.loads(question.choices)
+                except json.JSONDecodeError:
+                    choices_list = []
+
+                # CRITICAL FIX: Use the robust comparison function
+                is_correct = is_answer_correct(
+                    stored_correct=question.correct_answer,
+                    selected_option=selected_option,
+                    choices_list=choices_list
+                )
+                
+                if is_correct:
+                    score += 1
+                
+                StudentAnswer.objects.create(
+                    attempt=quiz_attempt, question=question, selected_option=selected_option, is_correct=is_correct
+                )
             
             # Simple pass/fail rule: Must get at least 1 correct answer (or whatever logic you prefer)
             is_passed = (score > 0)
@@ -447,3 +475,41 @@ def video_upload_view(request):
         serializer.save(tutor=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+def normalize(text):
+    if text is None:
+        return ''
+    # Convert to string, strip whitespace, and convert to lower for case-insensitive matching
+    return str(text).strip().lower()
+
+def is_answer_correct(stored_correct, selected_option, choices_list):
+    """
+    Checks if the selected option matches the stored correct answer, 
+    handling potential mismatches like full text vs. single letter.
+    
+    stored_correct: The full correct answer text from the DB (e.g., "B) FIFO...")
+    selected_option: The student's answer (e.g., "B) FIFO..." or "B")
+    choices_list: The list of full choices from the Question model (e.g., ["A) ...", "B) ..."])
+    """
+    s_stored = normalize(stored_correct)
+    s_selected = normalize(selected_option)
+
+    # 1. Exact match (Covers case where frontend sends full text)
+    if s_selected == s_stored:
+        return True
+
+    # 2. Match by Letter (Covers case where frontend sends only the letter, e.g., "b")
+    # This assumes choices_list items are correctly prefixed (e.g., "A) ", "B) ")
+    if len(s_selected) == 1 and s_selected.isalpha():
+        letter = s_selected.upper()
+        
+        for choice_text in choices_list:
+            if normalize(choice_text).startswith(letter.lower() + ')'):
+                s_full_choice = normalize(choice_text)
+                if s_full_choice == s_stored:
+                    return True
+    
+    # NOTE: We skip the check where the DB might store only 'B', because we fixed 
+    # the generation logic in Step 1 to store the full text.
+
+    return False

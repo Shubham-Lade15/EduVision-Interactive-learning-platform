@@ -23,13 +23,13 @@ class VideoSerializer(serializers.ModelSerializer):
 
     def get_current_user_progress(self, obj):
         request = self.context.get('request')
-        if not request or not request.user or not request.user.is_authenticated:
-            return {'video_completed': False, 'all_quizzes_passed': False, 'last_watched_time': 0.0}
-        try:
-            progress = StudentProgress.objects.get(student=request.user, video=obj)
+        if request and request.user.is_authenticated and request.user.role == 'student':
+            progress, created = StudentProgress.objects.get_or_create(
+                student=request.user,
+                video=obj
+            )
             return StudentProgressSerializer(progress).data
-        except StudentProgress.DoesNotExist:
-            return {'video_completed': False, 'all_quizzes_passed': False, 'last_watched_time': 0.0}
+        return None # Return None if user is not a student or not authenticated
 
 class CourseSerializer(serializers.ModelSerializer):
     videos = VideoSerializer(many=True, read_only=True)

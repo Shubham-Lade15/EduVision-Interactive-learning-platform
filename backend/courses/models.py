@@ -23,6 +23,12 @@ class Video(models.Model):
     transcript = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        ordering = ['id']
+
 class Quiz(models.Model):
     video = models.ForeignKey(
         'Video', related_name='quizzes', on_delete=models.CASCADE

@@ -103,6 +103,22 @@ function CourseDetailPage({ user }) {
     };
 
     const handleVideoSelect = (video) => {
+        // --- NEW LOCKING CHECK ---
+        if (user?.role === 'student' && course && course.videos) {
+            const videoIndex = course.videos.findIndex(v => v.id === video.id);
+            // Lock all videos except the first one (index > 0)
+            if (videoIndex > 0) {
+                const prevVideo = course.videos[videoIndex - 1];
+                const prevProgress = getProgress(prevVideo);
+                
+                // If previous video is NOT complete (must be watched AND quizzes passed)
+                if (!prevProgress.video_completed || !prevProgress.all_quizzes_passed) {
+                    alert("Please watch the previous video entirely and pass all its quizzes before starting this one.");
+                    return; // BLOCK navigation
+                }
+            }
+        }
+        // --- END LOCKING CHECK ---
         // NOTE: Video locking logic should be implemented here in the next step
         const isFullUrl = video.video_file.startsWith('http://') || video.video_file.startsWith('https://');
         const fullUrl = isFullUrl ? video.video_file : `${API_BASE_URL}${video.video_file}`;
@@ -195,14 +211,25 @@ function CourseDetailPage({ user }) {
         }
 
         // --- DO NOT TOUCH THIS LOGIC BELOW ---
-        if (passed) {
-            alert("Quiz passed! You can now continue watching.");
-            // We assume successful pass updates the DB and we update the local state here
-            updateCourseState(true);
+        // if (passed) {
+        //     alert("Quiz passed! You can now continue watching.");
+        //     // We assume successful pass updates the DB and we update the local state here
+        //     updateCourseState(true);
 
-            if (playerRef.current) {
-                playerRef.current.play();
-            }
+        //     if (playerRef.current) {
+        //         playerRef.current.play();
+        //     }
+        if (passed) {
+            alert("Quiz passed! Video resuming.");
+            
+            // Synchronize state after successful quiz completio 
+
+            if (playerRef.current) {
+                playerRef.current.play();
+            }
+
+            // Mark quiz as seen in the session.
+            setShownQuizzes(prev => new Set(prev).add(currentQuiz.id));
         } else {
             alert("Quiz failed. Please try again after re-watching the video segment.");
 
@@ -270,136 +297,146 @@ function CourseDetailPage({ user }) {
 
     const courseProgress = calculateCourseProgress(course);
 
-    return (
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '80%' }}>
-                <h1>{course.title}</h1>
-                {user?.role === 'tutor' && (
-                    <Link
-                        to={`/upload-video?courseId=${courseId}`}
-                        style={{
-                            padding: '10px 15px',
-                            backgroundColor: '#007bff',
-                            color: 'white',
-                            textDecoration: 'none',
-                            borderRadius: '5px'
-                        }}
-                    >
-                        ⬆️ Upload a Video
-                    </Link>
-                )}
-            </div>
+     return (
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '80%' }}>
+                <h1>{course.title}</h1>
+                {user?.role === 'tutor' && (
+                    <Link
+                        to={`/upload-video?courseId=${courseId}`}
+                        style={{
+                            padding: '10px 15px',
+                            backgroundColor: '#007bff',
+                            color: 'white',
+                            textDecoration: 'none',
+                            borderRadius: '5px'
+                        }}
+                    >
+                        ⬆️ Upload a Video
+                    </Link>
+                )}
+            </div>
 
-            {user?.role === 'student' && (
-                <div style={{ width: '80%', margin: '10px 0' }}>
-                    <div style={{ padding: '5px', backgroundColor: '#f0f0f0', textAlign: 'center', fontWeight: 'bold' }}>
-                        Course Progress: {courseProgress}%
-                    </div>
-                    <div style={{ height: '10px', backgroundColor: '#e9ecef' }}>
-                        <div style={{ width: `${courseProgress}%`, height: '100%', backgroundColor: '#28a745', transition: 'width 0.5s' }} />
-                    </div>
-                </div>
-            )}
+            {user?.role === 'student' && (
+                <div style={{ width: '80%', margin: '10px 0' }}>
+                    <div style={{ padding: '5px', backgroundColor: '#f0f0f0', textAlign: 'center', fontWeight: 'bold' }}>
+                        Course Progress: {courseProgress}%
+                    </div>
+                    <div style={{ height: '10px', backgroundColor: '#e9ecef' }}>
+                        <div style={{ width: `${courseProgress}%`, height: '100%', backgroundColor: '#28a745', transition: 'width 0.5s' }} />
+                    </div>
+                </div>
+            )}
 
-            <p style={{ width: '80%' }}>{course.description}</p>
+            <p style={{ width: '80%' }}>{course.description}</p>
 
-            <div style={{ width: '80%', marginBottom: '20px' }}>
-                {showQuiz && currentQuiz && (
-                    <QuizComponent
-                        quizData={currentQuiz}
-                        quizId={currentQuiz.id}
-                        onQuizSubmitted={handleQuizSubmitted}
-                    />
-                )}
-                {currentVideoUrl ? (
-                    <video
-                        ref={playerRef}
-                        src={currentVideoUrl}
-                        controls={!showQuiz}
-                        width="100%"
-                        onTimeUpdate={handleProgress}
-                        onSeeking={handleSeeking}
-                    />
-                ) : (
-                    <div>No video selected.</div>
-                )}
-            </div>
+            <div style={{ width: '80%', marginBottom: '20px' }}>
+                {showQuiz && currentQuiz && (
+                    <QuizComponent
+                        quizData={currentQuiz}
+                        quizId={currentQuiz.id}
+                        onQuizSubmitted={handleQuizSubmitted}
+                    />
+                )}
+                {currentVideoUrl ? (
+                    <video
+                        ref={playerRef}
+                        src={currentVideoUrl}
+                        controls={!showQuiz}
+                        width="100%"
+                        onTimeUpdate={handleProgress}
+                        onSeeking={handleSeeking}
+                    />
+                ) : (
+                    <div>No video selected.</div>
+                )}
+            </div>
 
-            <div style={{ width: '80%', display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <h2>Course Videos</h2>
-                <button
-                    onClick={() => setShowNotes(prev => !prev)}
-                    style={{ backgroundColor: '#007bff', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '5px', cursor: 'pointer' }}
-                    disabled={user?.role === 'student' && !videoCompleted}
-                >
-                    {showNotes ? 'Hide Notes' : 'Display Notes'}
-                </button>
-            </div>
+            <div style={{ width: '80%', display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <h2>Course Videos</h2>
+                <button
+                    onClick={() => setShowNotes(prev => !prev)}
+                    style={{ backgroundColor: '#007bff', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '5px', cursor: 'pointer' }}
+                    disabled={user?.role === 'student' && !videoCompleted}
+                >
+                    {showNotes ? 'Hide Notes' : 'Display Notes'}
+                </button>
+            </div>
 
-            {showNotes && course.videos.find(v => v.id === currentVideoId)?.notes && (
-                <div style={{ width: '80%', border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-                    <h3>Notes:</h3>
-                    <ReactMarkdown>{course.videos.find(v => v.id === currentVideoId)?.notes}</ReactMarkdown>
-                </div>
-            )}
+            {showNotes && course.videos.find(v => v.id === currentVideoId)?.notes && (
+                <div style={{ width: '80%', border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
+                    <h3>Notes:</h3>
+                    <ReactMarkdown>{course.videos.find(v => v.id === currentVideoId)?.notes}</ReactMarkdown>
+                </div>
+            )}
 
-            <div style={{ width: '80%', border: '1px solid #eee', borderRadius: '8px', padding: '10px' }}>
-                <ul>
-                    {course.videos.map(video => (
-                        <li key={video.id} style={{ marginBottom: '10px' }}>
-                            <span
-                                style={{ cursor: 'pointer', color: currentVideoId === video.id ? 'blue' : 'black' }}
-                                onClick={() => handleVideoSelect(video)}
-                            >
-                                {video.title}
-                                {getProgress(video).video_completed && (
-                                    <span style={{ marginLeft: '10px', color: 'green' }}>[Watched ✅]</span>
-                                )}
-                                {getProgress(video).all_quizzes_passed && (
-                                    <span style={{ marginLeft: '10px', color: 'darkgreen' }}>[Quizzes Passed ⭐]</span>
-                                )}
-                            </span>
-                            
-                            {/* Tutor-only buttons for content generation */}
-                            {user?.role === 'tutor' && (
-                                <>
-                                    <button
-                                        onClick={() => handleTranscribe(video.id)}
-                                        style={{ marginLeft: '10px' }}>
-                                        Transcribe
-                                    </button>
-                                    {transcriptionStatus && currentVideoId === video.id && (
-                                        <span style={{ marginLeft: '10px' }}>{transcriptionStatus}</span>
-                                    )}
-                                    <button
-                                        onClick={() => handleGenerateSmartContent(video.id)}
-                                        style={{ marginLeft: '10px' }}>
-                                        Generate Quizzes
-                                    </button>
-                                    {smartContentStatus && currentVideoId === video.id && (
-                                        <span style={{ marginLeft: '10px' }}>{smartContentStatus}</span>
-                                    )}
-                                    <button
-                                        onClick={() => handleGenerateNotes(video.id)}
-                                        style={{ marginLeft: '10px' }}>
-                                        Generate Notes
-                                    </button>
-                                    {notesStatus && currentVideoId === video.id && (
-                                        <span style={{ marginLeft: '10px' }}>{notesStatus}</span>
-                                    )}
-                                </>
-                            )}
-                            
-                        </li>
-                    ))}
-                </ul>
-            </div>
+            <div style={{ width: '80%', border: '1px solid #eee', borderRadius: '8px', padding: '10px' }}>
+                <ul>
+                    {course.videos.map((video, index) => {
+                        // NEW: Determine if this video is locked
+                        const isLocked = user?.role === 'student' && index > 0 && 
+                                         (!getProgress(course.videos[index - 1]).video_completed || 
+                                          !getProgress(course.videos[index - 1]).all_quizzes_passed);
+                        
+                        return (
+                            <li key={video.id} style={{ marginBottom: '10px' }}>
+                                <span
+                                    style={{ 
+                                            cursor: isLocked ? 'not-allowed' : 'pointer', 
+                                            color: isLocked ? '#999' : (currentVideoId === video.id ? 'blue' : 'black') 
+                                        }}
+                                    onClick={() => !isLocked && handleVideoSelect(video)}
+                                >
+                                    {isLocked ? '🔒 ' : ''}{video.title}
+                                    {getProgress(video).video_completed && (
+                                        <span style={{ marginLeft: '10px', color: 'green' }}>[Watched ✅]</span>
+                                    )}
+                                    {getProgress(video).all_quizzes_passed && (
+                                        <span style={{ marginLeft: '10px', color: 'darkgreen' }}>[Quizzes Passed ⭐]</span>
+                                    )}
+                                </span>
+                                
+                                {/* Tutor-only buttons for content generation */}
+                                {user?.role === 'tutor' && (
+                                    <>
+                                        <button
+                                            onClick={() => handleTranscribe(video.id)}
+                                            style={{ marginLeft: '10px' }}>
+                                            Transcribe
+                                        </button>
+                                        {transcriptionStatus && currentVideoId === video.id && (
+                                            <span style={{ marginLeft: '10px' }}>{transcriptionStatus}</span>
+                                        )}
+                                        <button
+                                            onClick={() => handleGenerateSmartContent(video.id)}
+                                            style={{ marginLeft: '10px' }}>
+                                            Generate Quizzes
+                                        </button>
+                                        {smartContentStatus && currentVideoId === video.id && (
+                                            <span style={{ marginLeft: '10px' }}>{smartContentStatus}</span>
+                                        )}
+                                        <button
+                                            onClick={() => handleGenerateNotes(video.id)}
+                                            style={{ marginLeft: '10px' }}>
+                                            Generate Notes
+                                        </button>
+                                        {notesStatus && currentVideoId === video.id && (
+                                            <span style={{ marginLeft: '10px' }}>{notesStatus}</span>
+                                        )}
+                                    </>
+                                )}
+                                
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
 
-            <div style={{ width: '80%', marginTop: '30px' }}>
-                <CodeEditor />
-            </div>
-        </div>
-    );
+            <div style={{ width: '80%', marginTop: '30px' }}>
+                <CodeEditor />
+            </div>
+        </div>
+    );
 }
 
 export default CourseDetailPage;
