@@ -15,10 +15,19 @@ function VideoUploadForm() {
     useEffect(() => {
         const fetchCourses = async () => {
             try {
-                const response = await axios.get(`${API_BASE_URL}/api/courses/`);
+                const token = localStorage.getItem('token');
+                
+                // --- FIX: Correctly define and pass the config object ---
+                const config = {
+                    headers: token ? { Authorization: `Token ${token}` } : {}
+                };
+                
+                // CRITICAL: Pass the config object to axios.get
+                const response = await axios.get(`${API_BASE_URL}/api/courses/`, config); 
+                
                 setCourses(response.data);
             } catch (error) {
-                setMessage('Failed to fetch courses. Please try again later.');
+                setMessage('Failed to fetch courses. Please ensure you are logged in.');
                 console.error('Error fetching courses:', error.response || error);
             }
         };
