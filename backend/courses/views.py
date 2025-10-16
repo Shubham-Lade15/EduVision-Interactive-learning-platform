@@ -9,21 +9,22 @@ import random
 import numpy as np
 import requests
 import json
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, views
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes, api_view, parser_classes, authentication_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
-from django.db.models import JSONField
-from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer
-from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, StudentProgress
+from django.db.models import JSONField, Avg
+from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer
+from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, StudentProgress, Enrollment, Review
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
 from users.permissions import IsTutor
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 
 from django.contrib.auth import get_user_model
 User = get_user_model()
@@ -108,16 +109,135 @@ def code_execute_view(request):
     except requests.exceptions.RequestException as e:
         return Response({'error': f"API request failed: {str(e)}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+class TutorCourseViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet specifically for Tutors to manage and view only their courses.
+    """
+    serializer_class = CourseSerializer 
+    permission_classes = [IsTutor] # Only Tutors can access this ViewSet
+
+    def get_queryset(self):
+        # Filter the courses to show only those created by the requesting tutor
+        return Course.objects.filter(tutor=self.request.user).order_by('id') 
+    
+    def perform_create(self, serializer):
+        # Automatically assign the logged-in tutor as the course creator
+        serializer.save(tutor=self.request.user)
 
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
+    def perform_create(self, serializer):
+        if not self.request.user.is_authenticated or self.request.user.role != 'tutor':
+            # This handles cases where permission classes might be bypassed or misconfigured
+            raise permissions.PermissionDenied("Only tutors can create courses.")
+
+        # Inject the currently logged-in user into the validated data before saving
+        serializer.save(tutor=self.request.user)
+    def get_queryset(self):
+        # Start with the base queryset (all courses, ordered by ID for stability)
+        queryset = Course.objects.all().order_by('id') 
+        
+        # Tutors/Admins can see unpublished courses; Students can only see published ones.
+        if self.request.user.is_authenticated and self.request.user.role == 'student':
+            queryset = queryset.filter(is_published=True)
+        
+        # --- NEW FILTERING LOGIC ---
+        
+        # 1. Language Filter (e.g., ?language=English)
+        language = self.request.query_params.get('language')
+        if language:
+            queryset = queryset.filter(language__iexact=language) # Case-insensitive match
+            
+        # 2. Duration Filter (e.g., ?min_duration=10)
+        min_duration = self.request.query_params.get('min_duration')
+        if min_duration:
+            try:
+                min_duration = float(min_duration)
+                queryset = queryset.filter(duration_hours__gte=min_duration)
+            except ValueError:
+                # Ignore bad input and proceed
+                pass 
+                
+        # 3. Price Filter (Simple Free Check - assuming 'Free' is an implicit filter)
+        is_free = self.request.query_params.get('is_free')
+        if is_free in ['true', 'True', '1']:
+            # Assuming 'Free' courses have duration_hours=0.0 or a custom field.
+            # For simplicity, we assume free courses are those without a set duration (0.0) 
+            # if a price field is not added yet.
+            # Once a price field is added, this logic should check price=0.
+            pass # Placeholder for price logic - using general filtering for now
+            
+        # --- END FILTERING LOGIC ---
+        
+        return queryset
+
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            permission_classes = [permissions.AllowAny]
+        if self.action in ['list', 'retrieve', 'record_progress', 'enroll', 'my_courses']:
+            permission_classes = [permissions.IsAuthenticated]
         else:
             permission_classes = [IsTutor]
         return [permission() for permission in permission_classes]
+
+    @action(detail=False, methods=['get'], url_path='my-courses')
+    @permission_classes([permissions.IsAuthenticated]) # Only logged-in users can see their courses
+    def my_courses(self, request):
+        if request.user.role != 'student':
+            # Tutors and others should not use this endpoint
+            return Response(
+                {'error': 'This endpoint is for enrolled students only.'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 1. Get all Enrollment records for the current user
+        enrolled_courses_qs = Course.objects.filter(
+            enrollments__student=request.user
+        ).order_by('id') # Order by ID to match sequential flow
+
+        # 2. Serialize the courses
+        # Pass the request context for nested progress data
+        serializer = CourseSerializer(
+            enrolled_courses_qs, 
+            many=True, 
+            context={'request': request}
+        )
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='enroll')
+    @permission_classes([permissions.IsAuthenticated])
+    def enroll(self, request, pk=None):
+        course = get_object_or_404(Course, pk=pk) # <-- GUARANTEES RETRIEVAL BY ID
+
+        student = request.user
+
+        if student.role != 'student':
+            return Response(
+                {'error': 'Only students are permitted to enroll in courses.'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            enrollment = Enrollment.objects.create(
+                student=student, 
+                course=course
+            )
+            return Response(
+                {'status': 'Successfully enrolled in course!', 
+                 'course_id': course.id}, 
+                status=status.HTTP_201_CREATED
+            )
+        
+        except IntegrityError:
+            return Response(
+                {'status': 'You are already enrolled in this course.'}, 
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Enrollment failed: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('id') 
@@ -513,3 +633,100 @@ def is_answer_correct(stored_correct, selected_option, choices_list):
     # the generation logic in Step 1 to store the full text.
 
     return False
+
+class ReviewViewSet(viewsets.ModelViewSet):
+    """
+    Handles creating and listing reviews for courses.
+    - POST is used by authenticated students to submit a review.
+    - GET is used to list reviews for a course.
+    """
+    queryset = Review.objects.all().order_by('-created_at')
+    serializer_class = ReviewSerializer
+    
+    def get_permissions(self):
+        # Allow ALL users to retrieve general list/detail (standard DRF behavior)
+        if self.action in ['list', 'retrieve', 'reviews_by_course']: # <--- CRITICAL: Add 'reviews_by_course'
+            permission_classes = [permissions.AllowAny] 
+        # Allow creating (POST) only by authenticated users (students)
+        elif self.action == 'create':
+            # This check ensures only authenticated users can post reviews
+            permission_classes = [permissions.IsAuthenticated]
+        # Restrict management to Admin/Tutor
+        else:
+            permission_classes = [permissions.IsAdminUser] 
+        return [permission() for permission in permission_classes]
+    
+    def perform_create(self, serializer):
+        if self.request.user.role != 'student':
+            # Use the correctly imported exception
+            raise PermissionDenied("Only students can submit reviews.")
+            
+        # Check if the user is already enrolled in the course (optional but good security)
+        # enrollment_exists = Enrollment.objects.filter(student=self.request.user, course=self.request.data.get('course')).exists()
+        # if not enrollment_exists:
+        #     raise permissions.PermissionDenied("You must be enrolled to review this course.")
+
+        # Save the review, automatically setting the student field
+        serializer.save(student=self.request.user)
+
+    # NEW ACTION: List reviews for a specific course (e.g., /api/reviews/by_course/?course_id=1)
+    @action(detail=False, methods=['get'], url_path='by_course')
+    def reviews_by_course(self, request):
+        course_id = request.query_params.get('course_id')
+        if not course_id:
+            return Response({'error': 'A course_id parameter is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Filter and order by newest
+        reviews = self.queryset.filter(course_id=course_id)
+        
+        # Calculate the average rating for the course
+        avg_rating = reviews.aggregate(Avg('rating'))['rating__avg']
+        
+        # Paginate and serialize the review objects
+        page = self.paginate_queryset(reviews)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                'average_rating': round(avg_rating, 1) if avg_rating else 0.0,
+                'total_reviews': reviews.count(),
+                'reviews': serializer.data
+            })
+            
+        serializer = self.get_serializer(reviews, many=True)
+        return Response({
+            'average_rating': round(avg_rating, 1) if avg_rating else 0.0,
+            'total_reviews': reviews.count(),
+            'reviews': serializer.data
+        })
+
+class AnalyticsView(views.APIView):
+    # Permission: Only Tutors (who often act as Admins in dev) can view this data
+    permission_classes = [IsTutor] 
+
+    def get(self, request, *args, **kwargs):
+        # 1. User Counts
+        total_users = User.objects.count()
+        total_students = User.objects.filter(role='student').count()
+        total_tutors = User.objects.filter(role='tutor').count()
+
+        # 2. Course Counts
+        total_courses = Course.objects.count()
+        published_courses = Course.objects.filter(is_published=True).count()
+        total_enrollments = Enrollment.objects.count()
+
+        # 3. Tutor-Specific Course Count (For Instructor Dashboard)
+        tutor_courses = Course.objects.filter(tutor=request.user).count()
+
+        return Response({
+            'user_stats': {
+                'total_users': total_users,
+                'total_students': total_students,
+                'total_tutors': total_tutors,
+            },
+            'course_stats': {
+                'total_courses': total_courses,
+                'published_courses': published_courses,
+                'tutor_courses': tutor_courses,
+                'total_enrollments': total_enrollments,
+            }
+        }, status=status.HTTP_200_OK)

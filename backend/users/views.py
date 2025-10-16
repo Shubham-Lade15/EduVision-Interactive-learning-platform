@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -34,7 +34,51 @@ class CustomLoginView(APIView):
 
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
-
+    
+    # Handles GET /api/users/me/
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+    # Handles PUT/PATCH /api/users/me/ for profile updates (name, password, etc.)
+    def put(self, request):
+        return self.update(request, partial=False)
+
+    def patch(self, request):
+        return self.update(request, partial=True)
+
+    def update(self, request, partial=False):
+        # We pass the instance (the current user) to the serializer for update
+        serializer = UserSerializer(
+            request.user, 
+            data=request.data, 
+            partial=partial, 
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        # NOTE: UserSerializer's update() method must handle password hashing if included in data.
+        self.perform_update(serializer) 
+        
+        return Response(serializer.data)
+
+    def perform_update(self, serializer):
+        serializer.save()
+        # Logic to update password if needed is handled inside UserSerializer.update()
+
+class LogoutView(views.APIView):
+    permission_classes = [IsAuthenticated] # User must be authenticated to log out
+
+    def post(self, request):
+        try:
+            # Delete the user's authentication token from the database
+            Token.objects.filter(user=request.user).delete()
+            return Response(
+                {"detail": "Successfully logged out."}, 
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Logout failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

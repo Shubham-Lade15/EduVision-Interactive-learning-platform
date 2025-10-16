@@ -1,53 +1,186 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
 function RegisterForm() {
+    // STATE VARIABLES FOR EXPANDED FIELDS
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [role, setRole] = useState('student');
+    const [password2, setPassword2] = useState(''); // Confirm Password field
+    const [role, setRole] = useState('student'); 
+    const [email, setEmail] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+
     const [message, setMessage] = useState('');
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setMessage(''); // Clear previous messages
         try {
             const response = await axios.post(`${API_BASE_URL}/api/users/register/`, {
                 username,
+                email,      
+                first_name: firstName, 
+                last_name: lastName,   
                 password,
+                password2, // Send confirm password for backend validation
                 role
             });
-            setMessage('Registration successful! You can now log in.');
-            navigate('/login');
+            setMessage('Registration successful! Please log in.');
+            setTimeout(() => {
+                navigate('/login');
+            }, 500); // Redirect to login page after successful registration
         } catch (error) {
-            setMessage('Registration failed. Please try a different username.');
-            console.error("Registration error:", error.response || error);
+            console.error('Registration error:', error.response ? error.response.data : error.message);
+            
+            // Handle and display specific error messages from the backend (e.g., unique username, password strength)
+            if (error.response && error.response.data) {
+                let errorMessages = [];
+                for (const key in error.response.data) {
+                    // Check if the value is an array (Django sends validation errors as arrays)
+                    if (Array.isArray(error.response.data[key])) {
+                        // Prepend the field name and join the error messages
+                        errorMessages.push(`${key}: ${error.response.data[key].join(', ')}`);
+                    } else if (typeof error.response.data[key] === 'string') {
+                        // Handle generic detail errors
+                        errorMessages.push(`Error: ${error.response.data[key]}`);
+                    }
+                }
+                setMessage(errorMessages.join('\n'));
+            } else {
+                setMessage('An unexpected network error occurred during registration.');
+            }
         }
     };
 
     return (
-        <form onSubmit={handleSubmit}>
-            <h2>Register</h2>
-            <div>
-                <label>Username:</label>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required />
+        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg border border-gray-200">
+                <h1 className="text-3xl font-extrabold text-gray-900 text-center mb-6">Create Your EduVision Account</h1>
+                
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    
+                    {/* First Name & Last Name */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="first-name" className="block text-sm font-medium text-gray-700">First Name</label>
+                            <input
+                                id="first-name"
+                                type="text"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                required
+                                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="John"
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="last-name" className="block text-sm font-medium text-gray-700">Last Name</label>
+                            <input
+                                id="last-name"
+                                type="text"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                required
+                                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="Doe"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Email and Username */}
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email Address</label>
+                        <input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="john.doe@example.com"
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username</label>
+                        <input
+                            id="username"
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                            className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="johndoe123 (Must be unique)"
+                        />
+                    </div>
+
+                    {/* Password and Confirm Password */}
+                    <div>
+                        <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+                        <input
+                            id="password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="password2" className="block text-sm font-medium text-gray-700">Confirm Password</label>
+                        <input
+                            id="password2"
+                            type="password"
+                            value={password2}
+                            onChange={(e) => setPassword2(e.target.value)}
+                            required
+                            className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="Re-enter your password"
+                        />
+                    </div>
+
+                    {/* Role Selection */}
+                    <div>
+                        <label htmlFor="role" className="block text-sm font-medium text-gray-700">Register as:</label>
+                        <select
+                            id="role"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value)}
+                            className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        >
+                            <option value="student">Student</option>
+                            <option value="tutor">Tutor (Instructor)</option>
+                        </select>
+                    </div>
+
+                    {message && (
+                        <p className={`text-sm font-medium ${message.includes('successful') ? 'text-green-600' : 'text-red-600 whitespace-pre-line'}`}>
+                            {message}
+                        </p>
+                    )}
+
+                    <button
+                        type="submit"
+                        className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150"
+                    >
+                        Register
+                    </button>
+                </form>
+
+                <p className="mt-6 text-center text-sm text-gray-600">
+                    Already have an account?{' '}
+                    <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+                        Sign In
+                    </Link>
+                </p>
             </div>
-            <div>
-                <label>Password:</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            </div>
-            <div>
-                <label>Role:</label>
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
-                    <option value="student">Student</option>
-                    <option value="tutor">Tutor</option>
-                </select>
-            </div>
-            <button type="submit">Register</button>
-            {message && <p>{message}</p>}
-        </form>
+        </div>
     );
 }
+
 export default RegisterForm;

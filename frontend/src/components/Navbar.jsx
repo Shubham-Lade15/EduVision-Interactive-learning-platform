@@ -1,64 +1,75 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import '../index.css';
+import React from 'react';
+import { Link } from 'react-router-dom';
 
-const Navbar = ({ user }) => {
-  const [darkMode, setDarkMode] = useState(false);
-  const navigate = useNavigate();
+function Navbar({ user, handleLogout }) {
+    // Determine the user's main dashboard link based on role
+    const dashboardPath = user?.role === 'tutor' ? '/instructor/dashboard' : '/dashboard';
+    const dashboardText = user?.role === 'tutor' ? 'Instructor Panel' : 'My Learning';
 
-  // Apply theme to body
-  useEffect(() => {
-    if (darkMode) document.body.classList.add('dark-mode');
-    else document.body.classList.remove('dark-mode');
-  }, [darkMode]);
+    return (
+        <nav className="bg-white shadow-lg sticky top-0 z-50">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between items-center h-16">
+                    {/* Logo/Home Link */}
+                    <Link to="/" className="flex items-center space-x-2 text-2xl font-extrabold text-indigo-600">
+                        <span>EduVision</span>
+                    </Link>
 
-  return (
-    <nav className="navbar fade-in">
-      {/* LOGO */}
-      <div className="nav-logo" onClick={() => navigate('/')}>
-        EduVision<span style={{ color: 'var(--color-secondary)' }}></span>
-      </div>
+                    {/* Primary Navigation Links */}
+                    <div className="hidden md:flex space-x-8 items-center">
+                        <Link 
+                            to="/courses" 
+                            className="text-gray-600 hover:text-indigo-600 font-medium transition duration-150"
+                        >
+                            Browse Courses
+                        </Link>
+                        
+                        {/* Conditional Dashboard Link */}
+                        {user && (
+                            <Link 
+                                to={dashboardPath}
+                                className="text-gray-600 hover:text-indigo-600 font-medium transition duration-150"
+                            >
+                                {dashboardText}
+                            </Link>
+                        )}
+                    </div>
 
-      {/* SEARCH BAR */}
-      <input
-        type="text"
-        placeholder="Search for courses..."
-        className="search-bar"
-      />
-
-      {/* NAV LINKS */}
-      <div className="nav-links">
-        <Link to="/" className="nav-link">Home</Link>
-        <Link to="/courses" className="nav-link">Courses</Link>
-        {user && <Link to="/my-courses" className="nav-link">My Learning</Link>}
-        <Link to="/about" className="nav-link">About</Link>
-
-        {/* THEME TOGGLE */}
-        <button
-          className="theme-toggle"
-          onClick={() => setDarkMode(!darkMode)}
-          title="Toggle Theme"
-        >
-          {darkMode ? '☀️' : '🌙'}
-        </button>
-
-        {/* PROFILE */}
-        {user ? (
-          <div
-            className="profile-avatar"
-            onClick={() => navigate('/profile')}
-            title="Go to Profile"
-          >
-            {user.name ? user.name[0].toUpperCase() : 'U'}
-          </div>
-        ) : (
-          <Link to="/login" className="cta-btn">
-            Login
-          </Link>
-        )}
-      </div>
-    </nav>
-  );
-};
+                    {/* Auth/User Actions */}
+                    <div className="flex items-center space-x-4">
+                        {user ? (
+                            <>
+                                <span className="text-sm font-medium text-gray-700 hidden sm:block">
+                                    Welcome, <span className="font-semibold text-indigo-600">{user.username}</span>
+                                </span>
+                                <button
+                                    onClick={handleLogout}
+                                    className="bg-red-500 text-white text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-red-600 transition duration-150 shadow-md"
+                                >
+                                    Logout
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <Link 
+                                    to="/login" 
+                                    className="text-indigo-600 text-sm font-medium hover:text-indigo-800 transition"
+                                >
+                                    Sign In
+                                </Link>
+                                <Link 
+                                    to="/register" 
+                                    className="bg-indigo-600 text-white text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md"
+                                >
+                                    Register
+                                </Link>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </nav>
+    );
+}
 
 export default Navbar;

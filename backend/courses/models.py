@@ -7,12 +7,19 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+RATING_CHOICES = [
+    (i / 10.0, f"{i / 10.0:.1f}") for i in range(5, 51, 5) 
+]
 
 class Course(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses', default=1)
+    tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses')
+    short_description = models.CharField(max_length=500, blank=True, null=True)
+    duration_hours = models.DecimalField(max_digits=4, decimal_places=1, default=0.0) # e.g., 10.5 hours
+    language = models.CharField(max_length=50, default='English')
+    is_published = models.BooleanField(default=False) # For Admin/Tutor control
 
 class Video(models.Model):
     course = models.ForeignKey(Course, related_name='videos', on_delete=models.CASCADE)
@@ -77,7 +84,6 @@ class StudentAnswer(models.Model):
     selected_option = models.CharField(max_length=255, null=True, blank=True)
     is_correct = models.BooleanField(default=False)
 
-# backend/courses/models.py (add near other models)
 class StudentProgress(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='progresses')
     video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='progresses')
@@ -91,3 +97,52 @@ class StudentProgress(models.Model):
 
     def __str__(self):
         return f"Progress: {self.student.username} - {self.video.title}"
+
+class Enrollment(models.Model):
+    student = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='enrollments'
+    )
+    course = models.ForeignKey(
+        'Course', 
+        on_delete=models.CASCADE, 
+        related_name='enrollments'
+    )
+    enrollment_date = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        # Ensures a student can enroll in the same course only once
+        unique_together = ('student', 'course') 
+
+    def __str__(self):
+        return f"{self.student.username} enrolled in {self.course.title}"
+
+class Review(models.Model):
+    student = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='reviews_left',
+        verbose_name='Reviewer'
+    )
+    course = models.ForeignKey(
+        'Course',
+        on_delete=models.CASCADE,
+        related_name='reviews',
+        verbose_name='Course Reviewed'
+    )
+    # Rating field (e.g., 1 to 5 stars)
+    rating = models.FloatField(
+        choices=RATING_CHOICES, 
+        default=5.0
+    )
+    comment = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Ensures a student can review the same course only once
+        unique_together = ('student', 'course')
+        ordering = ['-created_at'] # Show newest reviews first
+
+    def __str__(self):
+        return f"Review by {self.student.username} for {self.course.title} ({self.rating} stars)"
