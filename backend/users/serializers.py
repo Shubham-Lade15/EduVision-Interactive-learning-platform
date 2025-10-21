@@ -7,46 +7,31 @@ User = get_user_model()
 
 # --- 1. Generic User Serializer (For GET /me/, PATCH /me/) ---
 class UserSerializer(serializers.ModelSerializer):
-    # Ensure email is unique and required for profile updates/retrieval
-    email = serializers.EmailField(required=True)
-    first_name = serializers.CharField(required=False)
-    last_name = serializers.CharField(required=False)
-    
+
     class Meta:
         model = User
         fields = [
-            'id', 
-            'username', 
-            'email',         
-            'first_name',    
-            'last_name',     
-            'password', 
-            'role'
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "role",
         ]
-        # Password should only be writable (used for creating/updating, never retrieved)
-        extra_kwargs = {'password': {'write_only': True}}
+        read_only_fields = ["id", "role"]
 
-    def create(self, validated_data):
-        password = validated_data.pop('password', None)
-        user = self.Meta.model(**validated_data)
-        
-        if password is not None:
-            user.set_password(password)
-            
-        user.save()
-        return user
-    
-    def update(self, instance, validated_data):
-        # Handles updating all user fields, including password hashing if present
-        password = validated_data.pop('password', None)
-        if password:
-            instance.set_password(password)
-        
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        instance.save()
-        return instance
+    def validate_email(self, value):
+        if value and "@" not in value:
+            raise serializers.ValidationError("Please enter a valid email address.")
+        return value
+
+    def validate_username(self, value):
+        request = self.context.get("request", None)
+        user = getattr(request, "user", None)
+
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("This username is already taken. Please choose another one.")
+        return value
 
 
 # --- 2. Registration Serializer (Specific for /register/) ---

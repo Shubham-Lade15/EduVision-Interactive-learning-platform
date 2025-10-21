@@ -1,125 +1,211 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { motion } from "framer-motion";
+import { Bar } from "react-chartjs-2";
+import "chart.js/auto";
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 function DashboardPage({ user }) {
-    const [enrolledCourses, setEnrolledCourses] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+  const [stats, setStats] = useState({
+    totalCourses: 0,
+    publishedCourses: 0,
+    totalStudents: 0,
+  });
+  const [enrollmentTrends, setEnrollmentTrends] = useState([]);
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-    // Function to calculate course progress (reused logic)
-    const calculateCourseProgress = (course) => {
-        if (!course || !course.videos || course.videos.length === 0) return 0;
-        let total = course.videos.length * 2; // 2 points per video (watch + quizzes)
-        let earned = 0;
-        course.videos.forEach(v => {
-            const p = v.current_user_progress || { video_completed: false, all_quizzes_passed: false };
-            if (p.video_completed) earned += 1;
-            if (p.all_quizzes_passed) earned += 1;
+  useEffect(() => {
+    if (!user || user.role !== "tutor") return;
+
+    const token = localStorage.getItem("token");
+
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+
+        // 1️⃣ Fetch all courses created by this tutor
+        const resCourses = await axios.get(`${API_BASE_URL}/api/courses/`, {
+          headers: { Authorization: `Token ${token}` },
         });
-        return total > 0 ? Math.round((earned / total) * 100) : 0;
+        const tutorCourses = resCourses.data.filter(
+          (c) => c.tutor_username === user.username
+        );
+
+        const totalCourses = tutorCourses.length;
+        const publishedCourses = tutorCourses.filter(
+          (c) => c.is_published
+        ).length;
+
+        // 2️⃣ Fetch all enrollments for tutor’s courses
+        const resEnrollments = await axios.get(
+          `${API_BASE_URL}/api/enrollments/`,
+          { headers: { Authorization: `Token ${token}` } }
+        );
+
+        // Filter only enrollments for tutor’s courses
+        const tutorEnrollments = resEnrollments.data.filter((e) =>
+          tutorCourses.some((course) => course.id === e.course)
+        );
+
+        // Compute total unique students
+        const uniqueStudents = [
+          ...new Set(tutorEnrollments.map((e) => e.student_username)),
+        ];
+
+        // Prepare enrollment trend data (by date)
+        const trendMap = {};
+        tutorEnrollments.forEach((e) => {
+          const date = new Date(e.enrollment_date).toLocaleDateString("en-IN", {
+            month: "short",
+            day: "numeric",
+          });
+          trendMap[date] = (trendMap[date] || 0) + 1;
+        });
+
+        const trendData = Object.entries(trendMap).map(([date, count]) => ({
+          date,
+          count,
+        }));
+
+        // Update states
+        setStats({
+          totalCourses,
+          publishedCourses,
+          totalStudents: uniqueStudents.length,
+        });
+        setEnrollmentTrends(trendData);
+        setEnrolledStudents(tutorEnrollments);
+      } catch (err) {
+        console.error("Dashboard fetch failed:", err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    // Fetch enrolled courses using the API implemented in Feature 1.3
-    useEffect(() => {
-        const fetchMyCourses = async () => {
-            if (!user || user.role !== 'student') {
-                setLoading(false);
-                setError('Access Denied. Please log in as a student.');
-                return;
-            }
+    fetchDashboardData();
+  }, [user]);
 
-            try {
-                const token = localStorage.getItem('token');
-                const config = { headers: { Authorization: `Token ${token}` } };
-                
-                // CRITICAL: Use the My Courses API endpoint (Feature 1.3)
-                const response = await axios.get(`${API_BASE_URL}/api/courses/my-courses/`, config);
-                setEnrolledCourses(response.data);
-            } catch (err) {
-                setError('Failed to fetch enrolled courses.');
-                console.error("My Courses API Error:", err.response || err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchMyCourses();
-    }, [user]);
-
-    if (loading) return <div className="p-10 text-center">Loading dashboard...</div>;
-    if (error) return <div className="p-10 text-red-600 text-center font-semibold">{error}</div>;
-
-    // --- Main Dashboard Rendering ---
+  if (!user || user.role !== "tutor") {
     return (
-        <div className="min-h-screen bg-gray-100 p-8">
-            <div className="max-w-7xl mx-auto">
-                <h1 className="text-4xl font-extrabold text-gray-900 mb-6">
-                    {user?.username}'s Learning Dashboard 🧑‍🎓
-                </h1>
-                
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    
-                    {/* Left Sidebar (Navigation Stub - Feature 4.1 Expansion) */}
-                    <div className="md:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-                        <h2 className="text-xl font-bold mb-4 border-b pb-2">Dashboard Menu</h2>
-                        <ul className="space-y-2">
-                            <li className="text-indigo-600 font-semibold">My Courses</li>
-                            <li><Link to="/profile" className="text-gray-600 hover:text-indigo-600">Profile Settings</Link></li>
-                            <li><Link to="/certificates" className="text-gray-600 hover:text-indigo-600">Certificates</Link></li>
-                        </ul>
-                    </div>
-
-                    {/* Main Content Area (My Courses List) */}
-                    <div className="md:col-span-3">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">My Enrolled Courses</h2>
-                        
-                        {enrolledCourses.length === 0 ? (
-                            <div className="p-8 bg-white rounded-xl shadow-md text-center text-gray-600">
-                                You are not currently enrolled in any courses. <Link to="/courses" className="text-indigo-600 font-medium hover:underline">Browse the catalog to start learning!</Link>
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                {enrolledCourses.map(course => {
-                                    const progressPercent = calculateCourseProgress(course);
-                                    return (
-                                        <div 
-                                            key={course.id} 
-                                            className="bg-white p-6 rounded-xl shadow-md flex justify-between items-center border border-gray-200"
-                                        >
-                                            <div className="w-full">
-                                                <h3 className="text-xl font-bold text-gray-900 mb-1">{course.title}</h3>
-                                                <p className="text-sm text-gray-500 mb-3 line-clamp-1">{course.short_description || course.description.substring(0, 80) + '...'}</p>
-                                                
-                                                {/* Progress Bar */}
-                                                <div className="w-full h-2 bg-gray-200 rounded-full mb-2">
-                                                    <div 
-                                                        style={{ width: `${progressPercent}%` }} 
-                                                        className="h-full bg-green-500 rounded-full transition-all duration-700"
-                                                    />
-                                                </div>
-                                                <p className="text-sm font-semibold text-gray-700">{progressPercent}% Complete</p>
-                                            </div>
-
-                                            {/* CTA Button */}
-                                            <Link 
-                                                to={`/courses/${course.id}`}
-                                                className="ml-6 flex-shrink-0 bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-indigo-700 transition"
-                                            >
-                                                Resume Course
-                                            </Link>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
+      <div className="flex flex-col justify-center items-center min-h-[60vh] text-center p-6">
+        <h1 className="text-2xl font-semibold text-red-600">
+          You can’t access this page.
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Only tutors have permission to view this dashboard.
+        </p>
+      </div>
     );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh] text-lg">
+        Loading dashboard data...
+      </div>
+    );
+  }
+
+
+  // Chart data
+  const trendChartData = {
+    labels: enrollmentTrends.map((t) => t.date),
+    datasets: [
+      {
+        label: "Enrolled Students",
+        data: enrollmentTrends.map((t) => t.count),
+        backgroundColor: "rgba(79, 70, 229, 0.6)",
+        borderRadius: 6,
+      },
+    ],
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-sky-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-4xl font-extrabold bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-400 bg-clip-text text-transparent mb-8 text-center">
+          Tutor Dashboard
+        </h1>
+
+        {/* === STAT CARDS === */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-6 bg-white/70 dark:bg-gray-900/70 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center"
+          >
+            <h3 className="text-lg font-semibold text-indigo-600">Total Courses</h3>
+            <p className="text-3xl font-bold mt-2">{stats.totalCourses}</p>
+          </motion.div>
+
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-6 bg-white/70 dark:bg-gray-900/70 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center"
+          >
+            <h3 className="text-lg font-semibold text-sky-600">Published Courses</h3>
+            <p className="text-3xl font-bold mt-2">{stats.publishedCourses}</p>
+          </motion.div>
+
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-6 bg-white/70 dark:bg-gray-900/70 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center"
+          >
+            <h3 className="text-lg font-semibold text-cyan-600">Active Students</h3>
+            <p className="text-3xl font-bold mt-2">{stats.totalStudents}</p>
+          </motion.div>
+        </div>
+
+        {/* === ENROLLMENT TREND CHART === */}
+        <div className="bg-white/70 dark:bg-gray-900/70 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 mb-12">
+          <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
+            Enrollment Trends
+          </h2>
+          {enrollmentTrends.length > 0 ? (
+            <Bar data={trendChartData} />
+          ) : (
+            <p className="text-gray-500">No enrollment data yet.</p>
+          )}
+        </div>
+
+        {/* === ENROLLED STUDENTS TABLE === */}
+        <div className="bg-white/70 dark:bg-gray-900/70 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
+          <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-6">
+            Enrolled Students Details
+          </h2>
+          {enrolledStudents.length === 0 ? (
+            <p className="text-gray-500">No students enrolled yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead>
+                  <tr className="bg-indigo-100 dark:bg-gray-800 text-left">
+                    <th className="py-3 px-4 font-semibold">Student</th>
+                    <th className="py-3 px-4 font-semibold">Course</th>
+                    <th className="py-3 px-4 font-semibold">Enrollment Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrolledStudents.map((enroll, idx) => (
+                    <tr
+                      key={idx}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                    >
+                      <td className="py-3 px-4">{enroll.student_username}</td>
+                      <td className="py-3 px-4">{enroll.course_title}</td>
+                      <td className="py-3 px-4">
+                        {new Date(enroll.enrollment_date).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default DashboardPage;

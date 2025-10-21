@@ -15,44 +15,89 @@ class QuizSerializer(serializers.ModelSerializer):
 
 class VideoSerializer(serializers.ModelSerializer):
     quizzes = QuizSerializer(many=True, read_only=True)
+    passed_quiz_ids = serializers.SerializerMethodField()
     current_user_progress = serializers.SerializerMethodField()
+
+    def get_passed_quiz_ids(self, obj):
+        user = self.context["request"].user
+        if user.is_anonymous:
+            return []
+        return list(
+            QuizAttempt.objects.filter(
+                student=user, quiz__video=obj, passed=True
+            ).values_list("quiz_id", flat=True)
+        )
+
+    def get_current_user_progress(self, obj):
+        user = self.context.get('request').user
+        if user.is_authenticated and user.role == 'student':
+            progress, _ = StudentProgress.objects.get_or_create(student=user, video=obj)
+            return {
+                'video_completed': progress.video_completed,
+                'all_quizzes_passed': progress.all_quizzes_passed
+            }
+        return {'video_completed': False, 'all_quizzes_passed': False}
+
 
     class Meta:
         model = Video
-        fields = '__all__'
-
-    def get_current_user_progress(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated and request.user.role == 'student':
-            progress, created = StudentProgress.objects.get_or_create(
-                student=request.user,
-                video=obj
-            )
-            return StudentProgressSerializer(progress).data
-        return None # Return None if user is not a student or not authenticated
+        fields = [
+            "id",
+            "title",
+            "video_file",
+            "quizzes",
+            "passed_quiz_ids",          # 🆕
+            "current_user_progress",    # 🆕
+        ]
 
 class CourseSerializer(serializers.ModelSerializer):
-    # CRITICAL: Read-only field to display the tutor's username/name
     tutor_username = serializers.ReadOnlyField(source='tutor.username')
-
     videos = serializers.SerializerMethodField()
-    
+    # # New optional metadata fields
+    # about = serializers.CharField(required=False, allow_blank=True)
+    # skills_gained = serializers.CharField(required=False, allow_blank=True)
+    # outcome = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Course
         fields = [
             'id', 
             'title', 
             'description', 
-            'tutor_username',       # New read-only field
-            # NEW METADATA FIELDS:
-            'short_description', 
+            'tutor_username',
+            # 'short_description', 
             'duration_hours', 
             'language', 
             'is_published', 
-            'videos'
+            'videos',
+            'about',
+            'skills_gained',
+            'outcome',
         ]
-        # Make the actual tutor ID read-only so it's set by perform_create in views.py
-        read_only_fields = ['tutor'] # Prevents the client from setting the tutor ID manually
+        read_only_fields = ['tutor']
+        
+    def get_videos(self, obj):
+        # Return course videos only if the request user is authorized (enrolled or tutor)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return []  # Guests can’t access videos
+
+        # Tutors can always access their own videos
+        if hasattr(user, 'role') and user.role == 'tutor' and obj.tutor == user:
+            videos = obj.videos.all().order_by('id')
+            return VideoSerializer(videos, many=True, context=self.context).data
+
+        # Students can access videos only if enrolled
+        is_enrolled = obj.enrollments.filter(student=user).exists()
+        if is_enrolled:
+            videos = obj.videos.all().order_by('id')
+            return VideoSerializer(videos, many=True, context=self.context).data
+
+        # Otherwise block access
+        return []
+
+
 
         
 class StudentAnswerSerializer(serializers.ModelSerializer):

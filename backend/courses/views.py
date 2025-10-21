@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db.models import JSONField, Avg
-from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer
+from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer, EnrollmentSerializer
 from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, StudentProgress, Enrollment, Review
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
@@ -124,6 +124,42 @@ class TutorCourseViewSet(viewsets.ModelViewSet):
         # Automatically assign the logged-in tutor as the course creator
         serializer.save(tutor=self.request.user)
 
+    @action(detail=True, methods=['post'], url_path='publish', permission_classes=[permissions.IsAuthenticated])
+    def publish(self, request, pk=None):
+        course = self.get_object()
+
+        # Only the course owner can publish
+        if course.tutor != request.user:
+            return Response({"error": "You do not have permission to publish this course."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        course.is_published = True
+        course.save()
+        return Response({
+            "status": "Course successfully published.",
+            "is_published": True,
+            "course_id": course.id
+        }, status=status.HTTP_200_OK)
+
+
+    @action(detail=True, methods=['post'], url_path='unpublish', permission_classes=[permissions.IsAuthenticated])
+    def unpublish(self, request, pk=None):
+        course = self.get_object()
+
+        # Only the course owner can unpublish
+        if course.tutor != request.user:
+            return Response({"error": "You do not have permission to unpublish this course."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        course.is_published = False
+        course.save()
+        return Response({
+            "status": "Course successfully unpublished.",
+            "is_published": False,
+            "course_id": course.id
+        }, status=status.HTTP_200_OK)
+
+
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
@@ -134,49 +170,51 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         # Inject the currently logged-in user into the validated data before saving
         serializer.save(tutor=self.request.user)
+
     def get_queryset(self):
-        # Start with the base queryset (all courses, ordered by ID for stability)
-        queryset = Course.objects.all().order_by('id') 
-        
-        # Tutors/Admins can see unpublished courses; Students can only see published ones.
-        if self.request.user.is_authenticated and self.request.user.role == 'student':
+        from django.db.models import Q
+        user = self.request.user
+
+        # Base queryset (all courses)
+        queryset = Course.objects.all().order_by('id')
+
+        # --- VISIBILITY RULES ---
+        if user.is_authenticated:
+            # Tutors: See all published courses + their own (even if unpublished)
+            if user.role == 'tutor':
+                queryset = queryset.filter(Q(tutor=user) | Q(is_published=True))
+            # Students: See only published courses
+            elif user.role == 'student':
+                queryset = queryset.filter(is_published=True)
+            # Admins: See everything
+            elif user.is_staff:
+                queryset = Course.objects.all()
+        else:
+            # Guests: See only published courses
             queryset = queryset.filter(is_published=True)
-        
-        # --- NEW FILTERING LOGIC ---
-        
-        # 1. Language Filter (e.g., ?language=English)
-        language = self.request.query_params.get('language')
-        if language:
-            queryset = queryset.filter(language__iexact=language) # Case-insensitive match
-            
-        # 2. Duration Filter (e.g., ?min_duration=10)
-        min_duration = self.request.query_params.get('min_duration')
-        if min_duration:
-            try:
-                min_duration = float(min_duration)
-                queryset = queryset.filter(duration_hours__gte=min_duration)
-            except ValueError:
-                # Ignore bad input and proceed
-                pass 
-                
-        # 3. Price Filter (Simple Free Check - assuming 'Free' is an implicit filter)
-        is_free = self.request.query_params.get('is_free')
-        if is_free in ['true', 'True', '1']:
-            # Assuming 'Free' courses have duration_hours=0.0 or a custom field.
-            # For simplicity, we assume free courses are those without a set duration (0.0) 
-            # if a price field is not added yet.
-            # Once a price field is added, this logic should check price=0.
-            pass # Placeholder for price logic - using general filtering for now
-            
-        # --- END FILTERING LOGIC ---
-        
+
+        # --- SEARCH LOGIC (TITLE ONLY) ---
+        search_query = (
+            self.request.query_params.get('search')
+            or self.request.query_params.get('search_title')
+        )
+        if search_query:
+            search_query = search_query.strip().lower()
+            queryset = queryset.filter(
+                Q(title__iexact=search_query)
+                | Q(title__istartswith=search_query)
+                | Q(title__icontains=search_query)
+            ).distinct()
+
         return queryset
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'record_progress', 'enroll', 'my_courses']:
-            permission_classes = [permissions.IsAuthenticated]
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.AllowAny]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsTutor]  # tutors can delete
         else:
-            permission_classes = [IsTutor]
+            permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
     @action(detail=False, methods=['get'], url_path='my-courses')
@@ -207,41 +245,136 @@ class CourseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='enroll')
     @permission_classes([permissions.IsAuthenticated])
     def enroll(self, request, pk=None):
-        course = get_object_or_404(Course, pk=pk) # <-- GUARANTEES RETRIEVAL BY ID
-
+        course = get_object_or_404(Course, pk=pk)
         student = request.user
 
-        if student.role != 'student':
+        if not hasattr(student, 'role') or student.role != 'student':
             return Response(
                 {'error': 'Only students are permitted to enroll in courses.'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        # Course must be published to allow enrollment
+        if not course.is_published:
+            return Response(
+                {'error': 'This course is not published yet. You cannot enroll.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
-            enrollment = Enrollment.objects.create(
+            enrollment, created = Enrollment.objects.get_or_create(
                 student=student, 
                 course=course
             )
-            return Response(
-                {'status': 'Successfully enrolled in course!', 
-                 'course_id': course.id}, 
-                status=status.HTTP_201_CREATED
-            )
-        
-        except IntegrityError:
-            return Response(
-                {'status': 'You are already enrolled in this course.'}, 
-                status=status.HTTP_200_OK
-            )
+            if created:
+                return Response(
+                    {'status': f'Successfully enrolled in {course.title}!', 
+                    'course_id': course.id}, 
+                    status=status.HTTP_201_CREATED
+                )
+            else:
+                return Response(
+                    {'status': f'Already enrolled in {course.title}.'}, 
+                    status=status.HTTP_200_OK
+                )
+
         except Exception as e:
             return Response(
                 {'error': f'Enrollment failed: {str(e)}'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    def retrieve(self, request, *args, **kwargs):
+        course = self.get_object()
+        user = request.user
+
+        # ---- CASE 1: Guest user ----
+        if not user.is_authenticated:
+            # Guests can view only published course info (no videos)
+            if not course.is_published:
+                return Response({'error': 'This course is not yet published.'}, status=403)
+            serializer = self.get_serializer(course)
+            data = serializer.data
+            data['videos'] = []  # Hide videos for guests
+            return Response(data)
+
+        # ---- CASE 2: Tutor ----
+        if hasattr(user, 'role') and user.role == 'tutor':
+            # Tutors can always access their own courses (even unpublished)
+            if course.tutor == user:
+                return super().retrieve(request, *args, **kwargs)
+            else:
+                # Other tutors: only published info
+                if not course.is_published:
+                    return Response({'error': 'This course is not yet published.'}, status=403)
+                serializer = self.get_serializer(course)
+                data = serializer.data
+                data['videos'] = []
+                return Response(data)
+
+        # ---- CASE 3: Student ----
+        if hasattr(user, 'role') and user.role == 'student':
+            is_enrolled = Enrollment.objects.filter(student=user, course=course).exists()
+            if is_enrolled:
+                # Enrolled students see full course (with videos)
+                return super().retrieve(request, *args, **kwargs)
+            else:
+               # 🔥 Not enrolled? Allow viewing info (CourseInfoPage)
+                if course.is_published:
+                    serializer = self.get_serializer(course)
+                    data = serializer.data
+                    data['videos'] = []  # Hide videos for not-enrolled students
+                    return Response(data)
+                else:
+                    return Response({'error': 'This course is not published yet.'}, status=403)
+
+        # Default fallback
+        return Response({'error': 'Unauthorized access.'}, status=403)
+
+class EnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
+        queryset = Enrollment.objects.all().select_related("student", "course")
+        serializer_class = EnrollmentSerializer
+        permission_classes = [permissions.IsAuthenticated]
+
+        def list(self, request, *args, **kwargs):
+            user = request.user
+            if user.role == "tutor":
+                # Return only enrollments from tutor’s own courses
+                return Response([
+                    {
+                        "id": e.id,
+                        "student_username": e.student.username,
+                        "course": e.course.id,
+                        "course_title": e.course.title,
+                        "enrollment_date": e.enrollment_date,
+                    }
+                    for e in self.queryset.filter(course__tutor=user)
+                ])
+            elif user.role == "student":
+                # Student can view their own enrollments
+                return Response([
+                    {
+                        "id": e.id,
+                        "course": e.course.id,
+                        "course_title": e.course.title,
+                        "enrollment_date": e.enrollment_date,
+                    }
+                    for e in self.queryset.filter(student=user)
+                ])
+            return Response([])
+
+
+
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('id') 
     serializer_class = VideoSerializer
+
+    def perform_create(self, serializer):
+        # Automatically attach the logged-in tutor as the uploader
+        user = self.request.user
+        if user.role != 'tutor':
+            raise PermissionDenied("Only tutors can upload videos.")
+        serializer.save(tutor=user)
     
     # NEW: Pass request to serializer context for fetching user progress
     def get_serializer_context(self):
@@ -266,6 +399,12 @@ class VideoViewSet(viewsets.ModelViewSet):
         progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
         if completed:
             progress.video_completed = True
+
+        # 🧠 If video completed and all quizzes are passed → auto mark for notes unlock
+        if progress.video_completed and progress.all_quizzes_passed:
+            progress.notes_unlocked = True  # Add this field in model if not present
+        progress.save()
+
         if last_time is not None:
             try:
                 progress.last_watched_time = float(last_time)
@@ -537,41 +676,40 @@ class QuizViewSet(viewsets.ModelViewSet):
             quiz_attempt.save()
 
              # --- (2) NEW: Check/Update All Quizzes Passed Status (FIXED LOGIC) ---
+            # --- (2) UPDATED: Check/Update All Quizzes Passed Status ---
             all_quizzes_passed_status = False
             if is_passed:
                 video = quiz.video
-                
-                # FIX: Find all UNIQUE quizzes for this video that the student has passed at least once.
-                # We use .values('quiz').distinct() to count unique quizzes that have a passing attempt.
+
+                # Count unique quizzes the student has passed for this video
                 passed_quizzes_count = QuizAttempt.objects.filter(
-                    quiz__video=video,        # Filter by video
-                    student=student,          # Filter by current student
-                    passed=True               # Filter for passing attempts
+                    quiz__video=video,
+                    student=student,
+                    passed=True
                 ).values('quiz').distinct().count()
-                
+
                 total_quizzes_count = video.quizzes.count()
 
-                # FIX: Only set status to True if the passed count equals the total count
-                if passed_quizzes_count == total_quizzes_count:
+                # ✅ Mark full video passed if all quizzes passed
+                if passed_quizzes_count == total_quizzes_count and total_quizzes_count > 0:
                     all_quizzes_passed_status = True
-                
-                # Update or create the StudentProgress record
-                progress, _ = StudentProgress.objects.get_or_create(
-                    student=student, 
-                    video=video,
-                    # Ensure video_completed flag defaults to False if creating new record
-                    defaults={'all_quizzes_passed': all_quizzes_passed_status} 
-                )
+
+                # ✅ Update or create StudentProgress record
+                progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
                 progress.all_quizzes_passed = all_quizzes_passed_status
+
+                # If all quizzes passed, also mark video completed
+                if all_quizzes_passed_status:
+                    progress.video_completed = True
                 progress.save()
 
-            # --- (3) Return Response (Ensure we return the final status) ---
+            # ✅ Return both the video completion and all_quizzes_passed status
             return Response({
                 'status': 'Quiz submitted successfully',
                 'score': score,
-                'total_questions': len(quiz_questions),
                 'passed': is_passed,
-                'all_quizzes_passed': all_quizzes_passed_status # Return the FINAL status of all quizzes
+                'all_quizzes_passed': all_quizzes_passed_status,
+                'video_completed': progress.video_completed
             }, status=status.HTTP_200_OK)
 
         except Exception as e:

@@ -1,161 +1,196 @@
-import React, { useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import axios from "axios";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = "http://127.0.0.1:8000";
 
-function CreateCoursePage() {
-    // Existing fields
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    
-    // NEW STATE FIELDS
-    const [shortDescription, setShortDescription] = useState('');
-    const [language, setLanguage] = useState('English');
-    const [durationHours, setDurationHours] = useState('');
-    
-    const [message, setMessage] = useState('');
-    const navigate = useNavigate();
+const CreateCoursePage = () => {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [about, setAbout] = useState("");
+  const [skillsGained, setSkillsGained] = useState("");
+  const [outcome, setOutcome] = useState("");
+  const [language, setLanguage] = useState("English");
+  const [duration, setDuration] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
 
-    const commonLanguages = ["English", "Spanish", "French", "German", "Python", "SQL"];
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage("");
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setMessage('');
-        try {
-            const token = localStorage.getItem('token');
-            const config = {
-                headers: {
-                    Authorization: `Token ${token}`
-                }
-            };
-            
-            // Collect all data for the payload
-            const payload = {
-                title, 
-                description,
-                short_description: shortDescription, // New field
-                language,                           // New field
-                duration_hours: durationHours,       // New field
-                is_published: false,                 // Default to Draft until reviewed/ready
-                // 'tutor' field is injected by the backend (perform_create)
-            };
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        `${API_BASE_URL}/api/courses/`,
+        {
+          title,
+          description,
+          about,
+          skills_gained: skillsGained,
+          outcome,
+          language,
+          duration_hours: duration,
+        },
+        { headers: { Authorization: `Token ${token}` } }
+      );
 
-            const response = await axios.post(
-                `${API_BASE_URL}/api/courses/`,
-                payload, // Use the expanded payload
-                config
-            );
-            setMessage('Course created successfully!');
-            navigate('/courses');
-        } catch (error) {
-            setMessage('Failed to create course. Only tutors can perform this action.');
-            console.error('Error creating course:', error.response || error);
-        }
-    };
+      setMessage("✅ Course created successfully!");
+      setTimeout(() => navigate("/tutor-dashboard"), 1000);
+    } catch (error) {
+      console.error("Error creating course:", error);
+      setMessage("❌ Failed to create course. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-8">
-            <div className="w-full max-w-lg bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
-                <h1 className="text-3xl font-extrabold text-gray-900 text-center mb-6">Create a New Course</h1>
-                
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    
-                    {/* Title */}
-                    <div>
-                        <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">Course Title</label>
-                        <input
-                            id="title"
-                            type="text"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                            placeholder="e.g., Data Structures: Linked Lists"
-                        />
-                    </div>
-                    
-                    {/* Short Description */}
-                    <div>
-                        <label htmlFor="short-desc" className="block text-sm font-medium text-gray-700 mb-1">Short Tagline (Max 500 chars)</label>
-                        <input
-                            id="short-desc"
-                            type="text"
-                            value={shortDescription}
-                            onChange={(e) => setShortDescription(e.target.value)}
-                            maxLength="500"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                            placeholder="A concise summary for the catalog page"
-                        />
-                    </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#f8fafc] to-[#eef2f7] dark:from-[#0f0f0f] dark:to-[#1a1a1a] flex justify-center items-center px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-800"
+      >
+        {/* HEADER */}
+        <h1 className="text-3xl font-extrabold text-center mb-6 bg-gradient-to-r from-indigo-600 to-sky-500 bg-clip-text text-transparent">
+          🎓 Create a New Course
+        </h1>
 
-                    {/* Language and Duration (Side-by-Side) */}
-                    <div className="grid grid-cols-2 gap-4">
-                        
-                        {/* Language */}
-                        <div>
-                            <label htmlFor="language" className="block text-sm font-medium text-gray-700 mb-1">Course Language</label>
-                            <select
-                                id="language"
-                                value={language}
-                                onChange={(e) => setLanguage(e.target.value)}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                            >
-                                {commonLanguages.map(lang => (
-                                    <option key={lang} value={lang}>{lang}</option>
-                                ))}
-                            </select>
-                        </div>
-                        
-                        {/* Duration */}
-                        <div>
-                            <label htmlFor="duration" className="block text-sm font-medium text-gray-700 mb-1">Total Duration (Hours)</label>
-                            <input
-                                id="duration"
-                                type="number"
-                                step="0.1"
-                                value={durationHours}
-                                onChange={(e) => setDurationHours(e.target.value)}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                                placeholder="e.g., 12.5"
-                            />
-                        </div>
-                    </div>
+        {/* FORM */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+              Course Title
+            </label>
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+              placeholder="e.g. Mastering React.js Fundamentals"
+            />
+          </div>
 
-                    {/* Description (Full) */}
-                    <div>
-                        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Full Course Description</label>
-                        <textarea
-                            id="description"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            rows="4"
-                            required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                            placeholder="Detail what the course covers, module-by-module..."
-                        />
-                    </div>
-                    
-                    {/* What Will You Learn (Placeholder/Future Implementation) */}
-                    {/* In a production app, this would be a separate form or JSON field */}
-                    <div className="text-sm text-gray-500 p-2 border-l-4 border-indigo-500 bg-indigo-50">
-                        *Note: What You'll Learn (Outcomes) will be managed/parsed from the Description in a future iteration.*
-                    </div>
-                    
-                    {message && <p className={`text-sm font-medium ${message.includes('successful') ? 'text-green-600' : 'text-red-600'}`}>{message}</p>}
-                    
-                    <button
-                        type="submit"
-                        className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150"
-                    >
-                        Create & Save Draft
-                    </button>
-                </form>
+          <div>
+            <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+              Description
+            </label>
+            <textarea
+              required
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows="4"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+              placeholder="Briefly describe your course..."
+            ></textarea>
+          </div>
+
+          <div>
+            <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+              About
+            </label>
+            <textarea
+              required
+              value={about}
+              onChange={(e) => setAbout(e.target.value)}
+              placeholder="What will students learn from this course?"
+              className="w-full border p-2 rounded-md"
+            ></textarea>
+          </div>
+
+          <div>
+            <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+              Skills Gained
+            </label>
+            <textarea
+              required
+              value={skillsGained}
+              onChange={(e) => setSkillsGained(e.target.value)}
+              placeholder="Skills you'll gain (comma-separated)"
+              className="w-full border p-2 rounded-md"
+            ></textarea>
             </div>
-        </div>
-    );
-}
+
+          <div>
+            <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+              Outcomes
+            </label>
+            <textarea
+              required
+              value={outcome}
+              onChange={(e) => setOutcome(e.target.value)}
+              placeholder="Expected course outcome"
+              className="w-full border p-2 rounded-md"
+            ></textarea>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+                Language
+              </label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-indigo-400 transition"
+              >
+                <option>English</option>
+                <option>Hindi</option>
+                <option>Marathi</option>
+                <option>Spanish</option>
+                <option>French</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1">
+                Duration (hours)
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-indigo-400 transition"
+                placeholder="e.g. 12"
+              />
+            </div>
+          </div>
+
+          {/* SUBMIT BUTTON */}
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-2.5 text-white font-semibold rounded-lg shadow-md transition-all duration-300 ${
+              loading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-700 hover:to-sky-600"
+            }`}
+          >
+            {loading ? "Creating..." : "Create Course"}
+          </button>
+        </form>
+
+        {/* FEEDBACK MESSAGE */}
+        {message && (
+          <p
+            className={`mt-4 text-center font-medium ${
+              message.includes("✅") ? "text-green-600" : "text-red-500"
+            }`}
+          >
+            {message}
+          </p>
+        )}
+      </motion.div>
+    </div>
+  );
+};
 
 export default CreateCoursePage;

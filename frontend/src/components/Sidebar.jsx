@@ -1,54 +1,37 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  Home,
-  BookOpen,
-  User,
-  LogOut,
-  LayoutDashboard,
-  Menu,
-} from "lucide-react"; // icons
-import "../index.css";
+import React from "react";
+import { Link } from "react-router-dom";
+import { Home, Book, User, LogOut } from "lucide-react";
 
-const Sidebar = ({ user }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    navigate("/login");
-  };
-
+const Sidebar = ({ isOpen, darkMode }) => {
   return (
-    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
-      <div>
-        <button className="sidebar-toggle" onClick={() => setCollapsed(!collapsed)}>
-          <Menu />
+    <aside
+      className={`fixed md:static top-0 left-0 h-full md:h-auto w-64 bg-gray-100 dark:bg-gray-800 shadow-lg transform transition-transform duration-300 
+      ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 z-40`}
+    >
+      <div className="flex flex-col p-4 space-y-3">
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-500 hover:text-white transition"
+        >
+          <Home className="w-5 h-5" /> Dashboard
+        </Link>
+        <Link
+          to="/courses"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-500 hover:text-white transition"
+        >
+          <Book className="w-5 h-5" /> Courses
+        </Link>
+        <Link
+          to="/profile"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-500 hover:text-white transition"
+        >
+          <User className="w-5 h-5" /> Profile
+        </Link>
+        <button className="flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-red-500 hover:text-white transition">
+          <LogOut className="w-5 h-5" /> Logout
         </button>
-        <div className="sidebar-top">
-          <Link to="/dashboard" className="sidebar-link">
-            <Home className="sidebar-icon" /> {!collapsed && "Dashboard"}
-          </Link>
-          <Link to="/my-courses" className="sidebar-link">
-            <BookOpen className="sidebar-icon" /> {!collapsed && "My Courses"}
-          </Link>
-          <Link to="/profile" className="sidebar-link">
-            <User className="sidebar-icon" /> {!collapsed && "Profile"}
-          </Link>
-          {user?.role === "tutor" && (
-            <Link to="/tutor-dashboard" className="sidebar-link">
-              <LayoutDashboard className="sidebar-icon" /> {!collapsed && "Tutor Panel"}
-            </Link>
-          )}
-        </div>
       </div>
-
-      <div className="sidebar-bottom">
-        <button onClick={handleLogout} className="sidebar-link" style={{ background: "none" }}>
-          <LogOut className="sidebar-icon" /> {!collapsed && "Logout"}
-        </button>
-      </div>
-    </div>
+    </aside>
   );
 };
 

@@ -12,14 +12,16 @@ RATING_CHOICES = [
 ]
 
 class Course(models.Model):
+    tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="courses")
     title = models.CharField(max_length=255)
     description = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses')
-    short_description = models.CharField(max_length=500, blank=True, null=True)
-    duration_hours = models.DecimalField(max_digits=4, decimal_places=1, default=0.0) # e.g., 10.5 hours
-    language = models.CharField(max_length=50, default='English')
-    is_published = models.BooleanField(default=False) # For Admin/Tutor control
+    language = models.CharField(max_length=50, default="English")
+    duration_hours = models.FloatField(default=0)
+    about = models.TextField(blank=True, null=True, help_text="What will you learn in this course?")
+    skills_gained = models.TextField(blank=True, null=True, help_text="Skills you’ll gain from this course.")
+    outcome = models.TextField(blank=True, null=True, help_text="Expected outcome after completing this course.")
+    is_published = models.BooleanField(default=False)
+   
 
 class Video(models.Model):
     course = models.ForeignKey(Course, related_name='videos', on_delete=models.CASCADE)
@@ -89,6 +91,7 @@ class StudentProgress(models.Model):
     video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='progresses')
     video_completed = models.BooleanField(default=False)
     all_quizzes_passed = models.BooleanField(default=False)
+    notes_unlocked = models.BooleanField(default=False)
     last_watched_time = models.FloatField(default=0.0)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -105,7 +108,7 @@ class Enrollment(models.Model):
         related_name='enrollments'
     )
     course = models.ForeignKey(
-        'Course', 
+        Course, 
         on_delete=models.CASCADE, 
         related_name='enrollments'
     )

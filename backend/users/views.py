@@ -3,9 +3,56 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from .models import User
 from .serializers import UserSerializer
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
+User = get_user_model()
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def profile_view(request):
+    """
+    Fetch the current logged-in user's profile.
+    """
+    user = request.user
+    serializer = UserSerializer(user, context={"request": request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def profile_update(request):
+    user = request.user
+    serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
+
+    
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    # 🔍 Handle username uniqueness and email format errors explicitly
+    errors = serializer.errors
+
+    if "username" in errors:
+        if any("unique" in str(e).lower() for e in errors["username"]):
+            return Response(
+                {"username": ["This username is already taken. Please choose another one."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    if "email" in errors:
+        if any("valid" in str(e).lower() for e in errors["email"]):
+            return Response(
+                {"email": ["Email is invalid. Please enter a valid email."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserRegistrationView(generics.CreateAPIView):
     queryset = User.objects.all()

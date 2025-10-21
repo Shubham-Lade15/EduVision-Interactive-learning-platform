@@ -1,3 +1,162 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans text-gray-900 dark:text-gray-100 
+           bg-white dark:bg-gray-950 
+           transition-colors duration-300;
+  }
+
+  h1 {
+    @apply text-3xl sm:text-4xl font-bold text-indigo-700 dark:text-indigo-300;
+  }
+
+  h2 {
+    @apply text-2xl sm:text-3xl font-semibold text-indigo-700 dark:text-indigo-200;
+  }
+
+  h3 {
+    @apply text-xl font-semibold text-gray-800 dark:text-gray-100;
+  }
+
+  p {
+    @apply leading-relaxed text-gray-700 dark:text-gray-300;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 font-medium rounded-md
+           text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98]
+           transition-all duration-200;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center px-4 py-2 font-medium rounded-md
+           border border-indigo-600 text-indigo-600 hover:bg-indigo-600 hover:text-white
+           transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-5 transition-colors duration-300;
+  }
+
+  .section-title {
+    @apply text-2xl sm:text-3xl font-bold mb-4 text-indigo-700 dark:text-indigo-300;
+  }
+}
+@keyframes slowGradientShift {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 50% 100%; }
+  50% { background-position: 100% 50%; }
+  75% { background-position: 50% 0%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-slowGradient {
+  animation: slowGradientShift 20s ease-in-out infinite;
+  background-size: 200% 200%;
+}
+/* global CSS variables (light / dark aware) */
+:root{
+  --bg-start: #f8fafc;
+  --bg-end: #eef2f7;
+  --card-bg: #ffffff;
+  --text-main: #0f172a;
+  --muted: #6b7280;
+  --accent-start: #6366f1;
+  --accent-end: #06b6d4;
+  --transition-fast: 180ms;
+}
+
+.dark {
+  --bg-start: #0f0f0f;
+  --bg-end: #1a1a1a;
+  --card-bg: #0b1220;
+  --text-main: #e6edf3;
+  --muted: #9ca3af;
+}
+
+/* application layout helpers */
+.app-bg {
+  background-image: linear-gradient(120deg, var(--bg-start), var(--bg-end));
+}
+
+/* subtle, attractive gradient orb used in hero visuals */
+.gradient-orb {
+  background: linear-gradient(45deg, var(--accent-start), var(--accent-end), #22c55e);
+  background-size: 400% 400%;
+  animation: gradientSlow 12s ease infinite;
+  filter: blur(64px);
+  opacity: 0.85;
+}
+
+/* micro-interactions */
+.btn-animated {
+  @apply transition transform duration-150 ease-in-out;
+}
+.btn-animated:hover { transform: translateY(-3px) scale(1.01); }
+.btn-animated:active { transform: translateY(-1px) scale(.995); }
+
+/* improved focus outlines for keyboard users */
+:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.12);
+  border-radius: 8px;
+}
+
+/* reduce motion for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .gradient-orb { animation: none; filter: blur(48px); }
+  .btn-animated { transition: none; transform: none; }
+}
+
+/* small responsive helper for content container */
+.max-screen {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+/* ------------- EduVision Global Typographic + Utility Layer ------------- */
+@layer utilities {
+  .heading-gradient {
+    @apply bg-gradient-to-r from-brand-600 to-accent-500 bg-clip-text text-transparent;
+  }
+
+  .section-container {
+    @apply max-w-6xl mx-auto px-6 md:px-10 py-12;
+  }
+
+  @layer utilities {
+  .card-surface {
+    @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl;
+    box-shadow: 0 6px 20px rgba(16, 24, 40, 0.06);
+  }
+}
+
+
+  .title-xl {
+    @apply text-4xl md:text-5xl font-extrabold font-display leading-tight;
+  }
+
+  .title-md {
+    @apply text-2xl md:text-3xl font-bold font-display;
+  }
+
+  .body-text {
+    @apply text-gray-700 dark:text-gray-300 leading-relaxed;
+  }
+
+  .muted {
+    @apply text-gray-500 dark:text-gray-400 text-sm;
+  }
+}
+
