@@ -28,6 +28,7 @@ class Video(models.Model):
     tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='videos', default=1)
     title = models.CharField(max_length=255)
     video_file = models.FileField(upload_to='videos/')
+    segments = JSONField(default=list, blank=True, null=True, help_text="List of video segments (time, index, text)")
     # Add other fields here like quizzes, notes, etc.
     transcript = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
@@ -72,7 +73,7 @@ class Question(models.Model):
     
 class QuizAttempt(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='quiz_attempts')
-    quiz = models.ForeignKey('Quiz', on_delete=models.CASCADE, related_name='attempts')
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='attempts')
     score = models.IntegerField(default=0)
     passed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -85,21 +86,6 @@ class StudentAnswer(models.Model):
     question = models.ForeignKey('Question', on_delete=models.CASCADE, null=True)
     selected_option = models.CharField(max_length=255, null=True, blank=True)
     is_correct = models.BooleanField(default=False)
-
-class StudentProgress(models.Model):
-    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='progresses')
-    video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='progresses')
-    video_completed = models.BooleanField(default=False)
-    all_quizzes_passed = models.BooleanField(default=False)
-    notes_unlocked = models.BooleanField(default=False)
-    last_watched_time = models.FloatField(default=0.0)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ('student', 'video')
-
-    def __str__(self):
-        return f"Progress: {self.student.username} - {self.video.title}"
 
 class Enrollment(models.Model):
     student = models.ForeignKey(
@@ -149,3 +135,18 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Review by {self.student.username} for {self.course.title} ({self.rating} stars)"
+
+class StudentProgress(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='progresses')
+    video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='progresses')
+    video_completed = models.BooleanField(default=False)
+    all_quizzes_passed = models.BooleanField(default=False)
+    last_watched_time = models.FloatField(default=0.0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Ensures a student has only one progress record per video
+        unique_together = ('student', 'video')
+
+    def __str__(self):
+        return f"Progress: {self.student.username} - {self.video.title}"

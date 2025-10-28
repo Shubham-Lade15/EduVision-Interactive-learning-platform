@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db.models import JSONField, Avg
 from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer, EnrollmentSerializer
-from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, StudentProgress, Enrollment, Review
+from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, Enrollment, Review, StudentProgress
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 model_st = SentenceTransformer('all-MiniLM-L6-v2') 
@@ -53,7 +53,6 @@ def get_judge0_language_id(language_name):
         'sql': 82,        # SQL (SQLite 3.32.3)
     }
     return language_map.get(language_name.lower())
-
 
 @api_view(['POST'])
 @authentication_classes([TokenAuthentication])
@@ -141,7 +140,6 @@ class TutorCourseViewSet(viewsets.ModelViewSet):
             "course_id": course.id
         }, status=status.HTTP_200_OK)
 
-
     @action(detail=True, methods=['post'], url_path='unpublish', permission_classes=[permissions.IsAuthenticated])
     def unpublish(self, request, pk=None):
         course = self.get_object()
@@ -158,7 +156,6 @@ class TutorCourseViewSet(viewsets.ModelViewSet):
             "is_published": False,
             "course_id": course.id
         }, status=status.HTTP_200_OK)
-
 
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
@@ -217,29 +214,30 @@ class CourseViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
+    # Ensure my_courses passes the context required for progress_percentage
     @action(detail=False, methods=['get'], url_path='my-courses')
-    @permission_classes([permissions.IsAuthenticated]) # Only logged-in users can see their courses
+    @permission_classes([permissions.IsAuthenticated]) # Only logged-in users can see their courses [cite: 3617]
     def my_courses(self, request):
         if request.user.role != 'student':
-            # Tutors and others should not use this endpoint
             return Response(
-                {'error': 'This endpoint is for enrolled students only.'}, 
+                {'error': 'This endpoint is for enrolled students only.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # 1. Get all Enrollment records for the current user
         enrolled_courses_qs = Course.objects.filter(
             enrollments__student=request.user
-        ).order_by('id') # Order by ID to match sequential flow
+        ).order_by('id')
 
         # 2. Serialize the courses
-        # Pass the request context for nested progress data
+        # Pass the request context. This will trigger the new get_progress_percentage 
+        # method in CourseSerializer for each course.
         serializer = CourseSerializer(
-            enrolled_courses_qs, 
-            many=True, 
-            context={'request': request}
+            enrolled_courses_qs,
+            many=True,
+            context={'request': request} # CRITICAL: Pass context to enable SerializerMethodFields
         )
-        
+
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='enroll')
@@ -364,10 +362,44 @@ class EnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
             return Response([])
 
 
-
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('id') 
     serializer_class = VideoSerializer
+
+    # NEW ACTION: To record video completion from the frontend
+    @action(detail=True, methods=['post'], url_path='record-progress')
+    @permission_classes([permissions.IsAuthenticated])
+    def record_progress(self, request, pk=None):
+        video = self.get_object()
+        student = request.user
+        
+        # Check if user is a student (redundant if permissions are right, but safe)
+        if not hasattr(student, 'role') or student.role != 'student':
+            raise PermissionDenied("Only students can record progress.")
+        
+        completed = request.data.get('completed', False)
+        last_time = request.data.get('last_watched_time', None)
+
+        # Get or create the progress record
+        progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
+        
+        # Update completion status
+        if completed:
+            progress.video_completed = True
+        
+        # Update last watched time if provided and a valid number
+        if last_time is not None:
+            try:
+                progress.last_watched_time = float(last_time)
+            except:
+                pass # Ignore if cast to float fails
+
+        progress.save()
+        
+        # Return the updated progress state
+        serializer = StudentProgressSerializer(progress)
+        return Response({'status': 'progress recorded', 'progress': serializer.data}, status=status.HTTP_200_OK)
+
 
     def perform_create(self, serializer):
         # Automatically attach the logged-in tutor as the uploader
@@ -381,39 +413,11 @@ class VideoViewSet(viewsets.ModelViewSet):
         return {'request': self.request} 
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'record_progress']:
+        if self.action in ['list', 'retrieve']:
             permission_classes = [permissions.IsAuthenticated] # Changed from AllowAny for progress tracking
         else:
             permission_classes = [IsTutor]
         return [permission() for permission in permission_classes]
-    
-    # NEW ACTION: To record video completion from the frontend
-    @action(detail=True, methods=['post'], url_path='record-progress')
-    @permission_classes([permissions.IsAuthenticated])
-    def record_progress(self, request, pk=None):
-        video = self.get_object()
-        student = request.user
-        completed = request.data.get('completed', False)
-        last_time = request.data.get('last_watched_time', None)
-
-        progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
-        if completed:
-            progress.video_completed = True
-
-        # 🧠 If video completed and all quizzes are passed → auto mark for notes unlock
-        if progress.video_completed and progress.all_quizzes_passed:
-            progress.notes_unlocked = True  # Add this field in model if not present
-        progress.save()
-
-        if last_time is not None:
-            try:
-                progress.last_watched_time = float(last_time)
-            except:
-                pass
-        progress.save()
-
-        serializer = StudentProgressSerializer(progress)
-        return Response({'status': 'progress recorded', 'progress': serializer.data}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='transcribe')
     def transcribe_video(self, request, pk=None):
@@ -567,7 +571,6 @@ class VideoViewSet(viewsets.ModelViewSet):
                 )
 
 
-
             return Response({
                 'status': 'Smart content generation successful!',
                 'segments_created': len(all_segments),
@@ -620,7 +623,64 @@ class VideoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-    # ... (all your existing code for CourseViewSet and VideoViewSet) ...
+# ---------------- PROGRESS TRACKING VIEWSET ----------------
+class StudentProgressViewSet(viewsets.GenericViewSet):
+    """
+    API for students to update their progress on a video.
+    """
+    queryset = StudentProgress.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    # POST /api/progress/track/
+    @action(detail=False, methods=['post'], url_path='track')
+    def track_progress(self, request):
+        # Feature 6: Ensure progress persists (get_or_create handles initial status)
+        student = request.user
+        video_id = request.data.get('video_id')
+        current_time = float(request.data.get('current_time', 0.0))
+        duration = float(request.data.get('duration', 0.0))
+
+        if not video_id:
+            return Response({"error": "Video ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        video = get_object_or_404(Video, pk=video_id)
+
+        # Feature 2/5: Logic to determine completion (95% watched)
+        is_completed = (current_time / duration) >= 0.95 if duration > 0 else False
+        
+        # Use existing utility logic to check enrollment before saving progress
+        if not Enrollment.objects.filter(student=student, course=video.course).exists():
+            raise PermissionDenied("You must be enrolled to track progress for this video.")
+
+        progress, created = StudentProgress.objects.get_or_create(
+            student=student,
+            video=video,
+            defaults={'last_watched_time': current_time, 'is_completed': is_completed}
+        )
+        
+        # Feature 6: Update progress if new time is greater, or set completion status
+        if current_time > progress.last_watched_time:
+            progress.last_watched_time = current_time
+        
+        if is_completed and not progress.is_completed:
+            progress.is_completed = True
+            # Feature 5: A notification or check here could be added for unlocking notes
+            # However, notes are gated on the *front end* by a simple check of is_completed
+            
+        progress.save()
+
+        # Recalculate and return full course progress (optional, good for client update)
+        course_serializer = CourseSerializer(
+            video.course, 
+            context={'request': request}
+        )
+        
+        return Response({
+            "status": "Progress updated",
+            "is_completed": progress.is_completed,
+            "last_watched_time": progress.last_watched_time,
+            "course_progress_percentage": course_serializer.data['progress_percentage']
+        }, status=status.HTTP_200_OK)
 
 class QuizViewSet(viewsets.ModelViewSet):
     queryset = Quiz.objects.all()
@@ -631,108 +691,123 @@ class QuizViewSet(viewsets.ModelViewSet):
     def submit_quiz(self, request, pk=None):
         try:
             quiz = self.get_object()
-            student = request.user 
+            student = request.user
             submitted_answers = request.data.get('answers', [])
             
-            # --- (1) Calculate Score (Your existing logic, adapted for authenticated user) ---
+            # --- (1) Calculate Score and Create Attempt ---
             quiz_attempt = QuizAttempt.objects.create(student=student, quiz=quiz)
             score = 0
             quiz_questions = quiz.questions.all()
 
             for submitted_answer in submitted_answers:
                 question_id = submitted_answer.get('question_id')
-                selected_option = submitted_answer.get('selected_option') # e.g., "B) FIFO..."
-
+                # CRITICAL: Frontend sends the FULL selected option text
+                selected_option = submitted_answer.get('selected_option_text') 
+                
                 try:
                     question = quiz_questions.get(id=question_id)
                 except Question.DoesNotExist:
                     continue
-                
+
                 # Load choices for robust validation
                 try:
-                    # Assuming question.choices is a JSON string of a list (e.g., ["A) Choice 1", "B) Choice 2"])
+                    # Note: question.choices is stored as a JSON string of a list
                     choices_list = json.loads(question.choices)
                 except json.JSONDecodeError:
                     choices_list = []
-
-                # CRITICAL FIX: Use the robust comparison function
+                    
+                # Use the robust comparison function (defined later/already exists)
                 is_correct = is_answer_correct(
                     stored_correct=question.correct_answer,
                     selected_option=selected_option,
                     choices_list=choices_list
                 )
-                
+
                 if is_correct:
                     score += 1
-                
+
                 StudentAnswer.objects.create(
                     attempt=quiz_attempt, question=question, selected_option=selected_option, is_correct=is_correct
                 )
             
-            # Simple pass/fail rule: Must get at least 1 correct answer (or whatever logic you prefer)
-            is_passed = (score > 0)
+            # Pass/fail rule: Must get at least 1 correct answer (or adjust as needed, e.g., all correct)
+            is_passed = (score == len(quiz_questions)) if len(quiz_questions) > 0 else (score > 0)
             quiz_attempt.score = score
             quiz_attempt.passed = is_passed
             quiz_attempt.save()
 
-             # --- (2) NEW: Check/Update All Quizzes Passed Status (FIXED LOGIC) ---
-            # --- (2) UPDATED: Check/Update All Quizzes Passed Status ---
+            # --- (2) Check/Update StudentProgress Status ---
             all_quizzes_passed_status = False
-            if is_passed:
-                video = quiz.video
+            video = quiz.video # Get the associated video
+            
+            # Find all UNIQUE quizzes for this video that the student has passed at least once.
+            passed_quizzes_count = QuizAttempt.objects.filter(
+                quiz__video=video,        
+                student=student,          
+                passed=True               
+            ).values('quiz').distinct().count()
 
-                # Count unique quizzes the student has passed for this video
-                passed_quizzes_count = QuizAttempt.objects.filter(
-                    quiz__video=video,
-                    student=student,
-                    passed=True
-                ).values('quiz').distinct().count()
+            total_quizzes_count = video.quizzes.count()
+            
+            # Set status to True only if the passed count equals the total count
+            if total_quizzes_count > 0 and passed_quizzes_count == total_quizzes_count:
+                all_quizzes_passed_status = True
 
-                total_quizzes_count = video.quizzes.count()
+            # Update or create the StudentProgress record
+            progress, _ = StudentProgress.objects.get_or_create(
+                student=student,
+                video=video,
+                # Ensure existing video_completed status is kept if already set
+                defaults={'all_quizzes_passed': all_quizzes_passed_status, 'video_completed': False} 
+            )
+            progress.all_quizzes_passed = all_quizzes_passed_status
+            progress.save()
 
-                # ✅ Mark full video passed if all quizzes passed
-                if passed_quizzes_count == total_quizzes_count and total_quizzes_count > 0:
-                    all_quizzes_passed_status = True
-
-                # ✅ Update or create StudentProgress record
-                progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
-                progress.all_quizzes_passed = all_quizzes_passed_status
-
-                # If all quizzes passed, also mark video completed
-                if all_quizzes_passed_status:
-                    progress.video_completed = True
-                progress.save()
-
-            # ✅ Return both the video completion and all_quizzes_passed status
+            # --- (3) Return Response ---
             return Response({
                 'status': 'Quiz submitted successfully',
                 'score': score,
+                'total_questions': len(quiz_questions),
                 'passed': is_passed,
-                'all_quizzes_passed': all_quizzes_passed_status,
-                'video_completed': progress.video_completed
+                'all_quizzes_passed': all_quizzes_passed_status # Return the FINAL video quiz status
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
+            traceback.print_exc()
             return Response(
                 {'error': f'Quiz submission failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
 @api_view(['POST'])
-@authentication_classes([TokenAuthentication])  # optional (explicit)
+@authentication_classes([TokenAuthentication])
 @permission_classes([permissions.IsAuthenticated, IsTutor])
 @parser_classes([MultiPartParser, FormParser])
 def video_upload_view(request):
     print("=== video_upload_view called ===")
     print("Request user:", request.user)
-    print("Is authenticated:", request.user.is_authenticated)
-    print("User role:", getattr(request.user, "role", "N/A"))
 
-    serializer = VideoSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(tutor=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    title = request.data.get('title')
+    course_id = request.data.get('course')
+    video_file = request.data.get('video_file')
+
+    if not course_id:
+        return Response({'error': 'Course ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        course = Course.objects.get(id=course_id)
+    except Course.DoesNotExist:
+        return Response({'error': 'Invalid Course ID.'}, status=status.HTTP_404_NOT_FOUND)
+
+    video = Video.objects.create(
+        course=course,
+        tutor=request.user,
+        title=title,
+        video_file=video_file
+    )
+
+    return Response({'message': 'Video uploaded successfully!', 'video_id': video.id})
+
 
 def normalize(text):
     if text is None:

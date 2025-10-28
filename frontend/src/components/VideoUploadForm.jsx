@@ -68,39 +68,27 @@ const VideoUploadForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!videoFile || !selectedCourse || !title.trim()) {
-      setMessage("⚠️ Please fill all required fields.");
-      return;
-    }
-
     const formData = new FormData();
-    formData.append("course", selectedCourse);
-    formData.append("title", title);
-    formData.append("video_file", videoFile);
+    formData.append('title', title);
+    formData.append('course', selectedCourse);  // ✅ course ID sent here
+    formData.append('video_file', videoFile);
 
     try {
-      setLoading(true);
-      const token = localStorage.getItem("token");
-      await axios.post(`${API_BASE_URL}/api/videos/`, formData, {
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setUploadProgress(percent);
-        },
-      });
+      const token = localStorage.getItem('token');
+      const config = { headers: {} };
+      if (token) config.headers.Authorization = `Token ${token}`;
 
-      setMessage("✅ Video uploaded successfully!");
-      setTimeout(() => navigate("/tutor-dashboard"), 1200);
+      const response = await axios.post(
+        `${API_BASE_URL}/api/videos/upload/`,
+        formData,
+        config
+      );
+      alert("Video is successfully uploaded!");
+      setMessage('Video uploaded successfully!');
+      navigate('/courses');
     } catch (error) {
-      console.error("Upload failed:", error);
-      setMessage("❌ Failed to upload video. Please try again.");
-    } finally {
-      setLoading(false);
+      setMessage('Failed to upload video. Please ensure you are a tutor.');
+      console.error('Error uploading video:', error.response || error);
     }
   };
 

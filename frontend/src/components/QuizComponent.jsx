@@ -1,4 +1,3 @@
-// frontend/src/components/QuizComponent.jsx
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
@@ -118,38 +117,20 @@ const QuizComponent = ({ quizData, quizId, onQuizSubmitted }) => {
     setFeedback("");
 
     const selectedText = String(choices[selectedIndex] || "").trim();
-    const selectedKey = extractKeyFromChoice(selectedText);
+    const currentQuestion = quizData.questions[0];
+
+    // Prepare payload in the format expected by the backend `submit_quiz` action
     const payload = {
-      selected_option_text: selectedText,
-      selected_option_index: selectedIndex,
-      selected_option_key: selectedKey,
+      answers: [{
+        question_id: currentQuestion.id,
+        // CRITICAL: Send the full choice text. The backend will use `is_answer_correct` to validate this.
+        selected_option_text: selectedText, 
+      }],
     };
 
-    // Local correctness fallback using server-provided answer if possible
-    const localPassed = handleLocalCorrectCheck(selectedText);
+    // Skip local check to rely entirely on the backend for final result consistency
 
     try {
-      // Optimistic: if localPassed is true, show success immediately and notify parent.
-      // Still send to backend so server persists attempt/result.
-      if (localPassed === true) {
-        setFeedback("✅ Correct — resuming video...");
-        // call parent after brief delay
-        setTimeout(() => {
-          onQuizSubmitted(true, false, quizId);
-          setSubmitting(false);
-        }, 600);
-        // still send to backend but don't wait
-        axios.post(`${API_BASE_URL}/api/quizzes/${quizId}/submit/`, payload, {
-          headers: localStorage.getItem("token")
-            ? { Authorization: `Token ${localStorage.getItem("token")}` }
-            : {},
-        }).catch((err) => {
-          console.warn("Backend submit failed after local pass:", err);
-        });
-        return;
-      }
-
-      // No local certainty -> call backend
       const token = localStorage.getItem("token");
       const res = await axios.post(
         `${API_BASE_URL}/api/quizzes/${quizId}/submit/`,
@@ -158,23 +139,29 @@ const QuizComponent = ({ quizData, quizId, onQuizSubmitted }) => {
       );
 
       const passed = res.data?.passed ?? false;
-      const newAllQuizzesPassed = res.data?.newAllQuizzesPassed ?? false;
+      // Capture the critical status flag updated by the backend (Feature 2)
+      const newAllQuizzesPassed = res.data?.all_quizzes_passed ?? false; 
 
       if (passed) {
         setFeedback("✅ Correct — resuming video...");
       } else {
-        setFeedback("❌ Incorrect — please review and try again.");
+        // Feature 4: Wrong option means restart/re-appear
+        setFeedback("❌ Incorrect — video restarting for review."); 
       }
 
+      // Delay resume slightly to allow user to read feedback
       setTimeout(() => {
+        // Pass result and new video status back to CourseDetailPage
         onQuizSubmitted(passed, newAllQuizzesPassed, quizId);
         setSubmitting(false);
       }, 700);
     } catch (err) {
-      console.error("Error submitting quiz:", err);
+      console.error("Error submitting quiz:", err.response || err);
       const serverMsg = err?.response?.data?.error || "Submission failed. Try again.";
       setFeedback(`⚠️ ${serverMsg}`);
       setSubmitting(false);
+      // On failure, treat as failed quiz submission for the parent component (restart video)
+      onQuizSubmitted(false, false, quizId);
     }
   };
 
@@ -219,7 +206,7 @@ const QuizComponent = ({ quizData, quizId, onQuizSubmitted }) => {
         <div className="flex flex-col items-center">
           <button
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || selectedIndex === null}
             className={`px-6 py-2 rounded-md font-semibold text-white ${
               submitting
                 ? "bg-gray-400 cursor-not-allowed"
