@@ -43,7 +43,7 @@ const HomePage = () => {
               Start Learning Now
             </Link>
             <Link to="/register" className="btn-outline text-base">
-              Register Today
+              Register Now
             </Link>
           </div>
         </motion.div>

@@ -42,7 +42,7 @@ function LoginForm({ onLogin }) {
             <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transition-colors duration-500">
                 <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white text-center mb-6">Welcome Back</h2>
 
-                {/* Social Login Placeholder (Updated styles) */}
+                {/* Social Login Placeholder (Updated styles)
                 <div className="space-y-3 mb-6">
                     <button className="w-full flex items-center justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition duration-150">
                         <span className="text-xl mr-2">G</span> Continue with Google
@@ -59,7 +59,7 @@ function LoginForm({ onLogin }) {
                     <div className="relative flex justify-center text-sm">
                         <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or sign in with username</span>
                     </div>
-                </div>
+                </div> */}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>

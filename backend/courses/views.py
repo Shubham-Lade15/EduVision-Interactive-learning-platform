@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db.models import JSONField, Avg
-from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer, EnrollmentSerializer
+from .serializers import CourseSerializer, VideoSerializer, QuizSerializer, QuizAttemptSerializer, ReviewSerializer, EnrollmentSerializer, StudentProgressSerializer
 from .models import Course, Video, Quiz, Question, QuizAttempt, StudentAnswer, Enrollment, Review, StudentProgress
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
@@ -373,32 +373,37 @@ class VideoViewSet(viewsets.ModelViewSet):
         video = self.get_object()
         student = request.user
         
-        # Check if user is a student (redundant if permissions are right, but safe)
         if not hasattr(student, 'role') or student.role != 'student':
             raise PermissionDenied("Only students can record progress.")
         
         completed = request.data.get('completed', False)
         last_time = request.data.get('last_watched_time', None)
 
-        # Get or create the progress record
-        progress, _ = StudentProgress.objects.get_or_create(student=student, video=video)
-        
-        # Update completion status
-        if completed:
-            progress.video_completed = True
-        
-        # Update last watched time if provided and a valid number
+        progress, _ = StudentProgress.objects.get_or_create(
+            student=student,
+            video=video
+        )
+
+        # Update last watched time
         if last_time is not None:
             try:
-                progress.last_watched_time = float(last_time)
+                last_time = float(last_time)
+                if last_time > progress.last_watched_time:
+                    progress.last_watched_time = last_time
             except:
-                pass # Ignore if cast to float fails
+                pass
+
+        # Update video completion
+        if completed:
+            progress.video_completed = True
 
         progress.save()
-        
-        # Return the updated progress state
+
         serializer = StudentProgressSerializer(progress)
-        return Response({'status': 'progress recorded', 'progress': serializer.data}, status=status.HTTP_200_OK)
+        return Response(
+            {'status': 'progress recorded', 'progress': serializer.data},
+            status=200
+        )
 
 
     def perform_create(self, serializer):
@@ -413,8 +418,14 @@ class VideoViewSet(viewsets.ModelViewSet):
         return {'request': self.request} 
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            permission_classes = [permissions.IsAuthenticated] # Changed from AllowAny for progress tracking
+        student_allowed_actions = [
+            'list',
+            'retrieve',
+            'record_progress',   # <---- THIS ACTION
+        ]
+
+        if self.action in student_allowed_actions:
+            permission_classes = [permissions.IsAuthenticated]
         else:
             permission_classes = [IsTutor]
         return [permission() for permission in permission_classes]
@@ -646,28 +657,24 @@ class StudentProgressViewSet(viewsets.GenericViewSet):
         video = get_object_or_404(Video, pk=video_id)
 
         # Feature 2/5: Logic to determine completion (95% watched)
-        is_completed = (current_time / duration) >= 0.95 if duration > 0 else False
-        
-        # Use existing utility logic to check enrollment before saving progress
-        if not Enrollment.objects.filter(student=student, course=video.course).exists():
-            raise PermissionDenied("You must be enrolled to track progress for this video.")
+        video_completed = (current_time / duration) >= 0.95 if duration > 0 else False
 
         progress, created = StudentProgress.objects.get_or_create(
             student=student,
             video=video,
-            defaults={'last_watched_time': current_time, 'is_completed': is_completed}
+            defaults={'last_watched_time': current_time}
         )
-        
-        # Feature 6: Update progress if new time is greater, or set completion status
+
+        # Update last watched time
         if current_time > progress.last_watched_time:
             progress.last_watched_time = current_time
-        
-        if is_completed and not progress.is_completed:
-            progress.is_completed = True
-            # Feature 5: A notification or check here could be added for unlocking notes
-            # However, notes are gated on the *front end* by a simple check of is_completed
-            
+
+        # Update video completion
+        if video_completed:
+            progress.video_completed = True
+
         progress.save()
+
 
         # Recalculate and return full course progress (optional, good for client update)
         course_serializer = CourseSerializer(
@@ -677,7 +684,7 @@ class StudentProgressViewSet(viewsets.GenericViewSet):
         
         return Response({
             "status": "Progress updated",
-            "is_completed": progress.is_completed,
+            "is_completed": progress.video_completed,
             "last_watched_time": progress.last_watched_time,
             "course_progress_percentage": course_serializer.data['progress_percentage']
         }, status=status.HTTP_200_OK)
