@@ -7,21 +7,21 @@ const API_BASE_URL = 'http://127.0.0.1:8000';
 
 const languageOptions = [
     { name: 'Python', value: 'python', judge0_id: 71 }, // Judge0 IDs are for simulation reference
-    { name: 'JavaScript', value: 'javascript', judge0_id: 63 },
+    //{ name: 'JavaScript', value: 'javascript', judge0_id: 63 },
     { name: 'Java', value: 'java', judge0_id: 62 },
     { name: 'C++', value: 'cpp', judge0_id: 54 },
     { name: 'C', value: 'c', judge0_id: 50 },
     // SQL, HTML/CSS are typically run differently, but we'll include them for language selection
-    { name: 'SQL', value: 'sql', judge0_id: 82 }, 
-    { name: 'HTML', value: 'html', judge0_id: null },
+    // { name: 'SQL', value: 'sql', judge0_id: 82 }, 
+    // { name: 'HTML', value: 'html', judge0_id: null },
 ];
 
 const initialCode = {
     python: 'print("Hello, EduVision!")',
-    javascript: 'console.log("Hello, EduVision!");',
+    //javascript: 'console.log("Hello, EduVision!");',
     java: 'class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, EduVision!");\n  }\n}',
     // ... add initial code for other languages
-    sql: 'SELECT * FROM users;', 
+    //sql: 'SELECT * FROM users;', 
     c: '#include <stdio.h>\nint main() {\n  printf("Hello, EduVision!");\n  return 0;\n}',
     cpp: '#include <iostream>\nint main() {\n  std::cout << "Hello, EduVision!";\n  return 0;\n}'
 };
