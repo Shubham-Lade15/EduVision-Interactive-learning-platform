@@ -605,34 +605,43 @@ class VideoViewSet(viewsets.ModelViewSet):
                     {'error': 'Transcript not found. Please transcribe the video first.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
-            prompt = (
-                f"Create a set of detailed study notes from the following video transcript. "
-                f"Structure the notes with clear headings and bullet points for easy reading. "
-                f"Focus on the key concepts, definitions, and examples provided in the text.\n\n"
-                f"Return the notes as a single, valid JSON object with a single key 'notes_content' "
-                f"that contains the summary as a string formatted with markdown (e.g., # Heading, - Bullet point).\n\n"
-                f"Transcription:\n\"\"\"\n{video.transcript}\n\"\"\""
-            )
+
+            prompt = f"""
+            Generate detailed, high-quality study notes from the transcript below.
+
+            Requirements:
+            - Use clean Markdown formatting (# headings, ## subheadings, - bullet points).
+            - Do NOT include code blocks.
+            - Do NOT include backticks (```)
+            - Do NOT return JSON.
+            - Return ONLY the markdown notes.
+
+            Transcript:
+            \"\"\"
+            {video.transcript}
+            \"\"\"
+            """
 
             response = model_gemini.generate_content(prompt)
-            notes_text = response.text.strip().replace("```json\n", "").replace("```", "")
-            
-            notes_data = json.loads(notes_text)
-            
-            video.notes = notes_data['notes_content']
+            notes_text = response.text.strip()
+
+            # Save raw markdown notes directly
+            video.notes = notes_text
             video.save()
-            
+
             return Response({
                 'status': 'Notes generation successful!',
-                'notes_length': len(notes_data['notes_content'])
+                'notes_length': len(notes_text)
             })
+
         except Exception as e:
             traceback.print_exc()
             return Response(
                 {'error': f'Notes generation failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
         
 # ---------------- PROGRESS TRACKING VIEWSET ----------------
 class StudentProgressViewSet(viewsets.GenericViewSet):

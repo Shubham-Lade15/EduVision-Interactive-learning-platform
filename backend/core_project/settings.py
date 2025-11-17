@@ -149,7 +149,7 @@ CORS_ALLOWED_ORIGINS = [
 # but it's less secure and should be set to False (like above) for production.
 # We are explicitly allowing specific origins above, so CORS_ALLOW_ALL_ORIGINS should remain False
 
-GEMINI_API_KEY = "AIzaSyBbsjcXXSZZqX2QJ9225WfbebdPu8ZKl1M"
+GEMINI_API_KEY = "AIzaSyAizjd5kUAqwYTppTx7t8d1LM0bX9PyUfo"
 
 # settings.py
 

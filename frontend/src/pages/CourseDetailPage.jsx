@@ -319,17 +319,81 @@ function CourseDetailPage({ user }) {
 
   // ---------------- Tutor Tools ----------------
   const handleTranscribe = async (videoId) => {
+    console.log("Transcribe clicked for video:", videoId);
+
     setTranscriptionStatus("Transcribing...");
-    // ... (logic remains the same)
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post(
+        `${API_BASE_URL}/api/videos/${videoId}/transcribe/`,
+        {},
+        {
+          headers: {
+            Authorization: `Token ${token}`,
+          },
+        }
+      );
+
+      console.log("Transcription result:", res.data);
+
+      setTranscriptionStatus("Transcription Completed ✅");
+
+      // Optional: Refresh course so the new transcript loads
+      fetchCourseDetails(currentVideoId);
+    } catch (err) {
+      console.error("Transcription error:", err.response || err);
+      setTranscriptionStatus("Failed ❌");
+    }
   };
+
   const handleGenerateSmartContent = async (videoId) => {
+    console.log("Quiz generation clicked:", videoId);
     setSmartContentStatus("Generating...");
-    // ... (logic remains the same)
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post(
+        `${API_BASE_URL}/api/videos/${videoId}/generate-smart-content/`,
+        {},
+        { headers: { Authorization: `Token ${token}` } }
+      );
+
+      console.log("Smart content result:", res.data);
+
+      setSmartContentStatus("Quizzes Generated ✅");
+      fetchCourseDetails(currentVideoId);
+    } catch (err) {
+      console.error(err.response || err);
+      setSmartContentStatus("Failed ❌");
+    }
   };
+
   const handleGenerateNotes = async (videoId) => {
+    console.log("Notes generation clicked:", videoId);
     setNotesStatus("Generating...");
-    // ... (logic remains the same)
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post(
+        `${API_BASE_URL}/api/videos/${videoId}/generate-notes/`,
+        {},
+        { headers: { Authorization: `Token ${token}` } }
+      );
+
+      console.log("Notes generation result:", res.data);
+
+      setNotesStatus("Notes Generated ✅");
+      fetchCourseDetails(currentVideoId);
+    } catch (err) {
+      console.error(err.response || err);
+      setNotesStatus("Failed ❌");
+    }
   };
+
   const toggleEditor = () => setEditorOpen((p) => !p);
   const toggleSidebar = () => setSidebarOpen((p) => !p);
 
