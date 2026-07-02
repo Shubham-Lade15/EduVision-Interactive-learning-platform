@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -76,18 +78,24 @@ WSGI_APPLICATION = 'core_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": os.environ.get("DB_NAME"),
+#         "USER": os.environ.get("DB_USER"),
+#         "PASSWORD": os.environ.get("DB_PASSWORD"),
+#         "HOST": os.environ.get("DB_HOST"),
+#         "PORT": os.environ.get("DB_PORT", "5432"),
+#     }
+# }
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("DB_NAME"),
-        "USER": os.environ.get("DB_USER"),
-        "PASSWORD": os.environ.get("DB_PASSWORD"),
-        "HOST": os.environ.get("DB_HOST"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
-    }
+    "default": dj_database_url.config(
+        default=os.environ.get("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True,
+    )
 }
-
-
 
 
 # Password validation
@@ -140,23 +148,15 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media') # This will create a 'media' folder in your project root
 
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", # <-- Your frontend's development URL (Vite default)
-    "http://127.0.0.1:5173", # <-- Often needed as well for local testing
-    # Add other specific frontend origins here if needed later (e.g., your deployed frontend URL)
-]
+CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
 
 # You might also find CORS_ALLOW_ALL_ORIGINS = True for quick testing,
 # but it's less secure and should be set to False (like above) for production.
 # We are explicitly allowing specific origins above, so CORS_ALLOW_ALL_ORIGINS should remain False
 
-GEMINI_API_KEY = "AIzaSyAizjd5kUAqwYTppTx7t8d1LM0bX9PyUfo"
-
-# settings.py
-
-RAPIDAPI_JUDGE0_HOST = "judge0-ce.p.rapidapi.com"
-RAPIDAPI_JUDGE0_KEY = "7f3ae7c5cdmsh80dea708eb41e6bp16385bjsn233cb65206a3"
-
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+RAPIDAPI_JUDGE0_HOST = os.environ.get("RAPIDAPI_JUDGE0_HOST", "judge0-ce.p.rapidapi.com")
+RAPIDAPI_JUDGE0_KEY = os.environ.get("RAPIDAPI_JUDGE0_KEY")
 
 # Set the custom user model
 AUTH_USER_MODEL = 'users.User'

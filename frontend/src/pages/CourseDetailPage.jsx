@@ -5,7 +5,7 @@ import QuizComponent from "../components/QuizComponent";
 import ReactMarkdown from "react-markdown";
 import CodeEditor from "../components/CodeEditor";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 function CourseDetailPage({ user }) {
   const { courseId } = useParams();

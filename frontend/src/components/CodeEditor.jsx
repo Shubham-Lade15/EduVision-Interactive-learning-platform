@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const languageOptions = [
     { name: 'Python', value: 'python', judge0_id: 71 }, // Judge0 IDs are for simulation reference
